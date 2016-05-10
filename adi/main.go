@@ -66,14 +66,14 @@ Usage:
 				var err error
 				gclient, err = google.New()
 				if err != nil {
-					log.Println("ERROR:", err.Error())
+					log.Println("ERROR:", err)
 					return Response{
 						Text: "internal error",
 					}
 				}
 				err = gclient.Init(TLD)
 				if err != nil {
-					log.Println("ERROR:", err.Error())
+					log.Println("ERROR:", err)
 					return Response{
 						Text: "internal error",
 					}
@@ -109,7 +109,7 @@ Usage:
 			{
 				var err error
 				u := fmt.Sprintf(
-					"http://duckduckgo.com/v.js?q=%s&o=json&strict=1",
+					"https://duckduckgo.com/v.js?q=%s&o=json&strict=1",
 					url.QueryEscape(text))
 				r, err = http.Get(u)
 				if err != nil {
@@ -234,6 +234,61 @@ Usage:
 				Text: strings.TrimSpace(t),
 			}
 		},
+		"poll": func(text string) Response {
+			if text == "" {
+				return Response{
+					Text: `Creates a poll
+	Example: poll animal?, dog, cat, hamster
+		-> Creates a poll with title animal? and the three animals as choices`,
+				}
+			}
+			s := strings.Split(text, ",")
+			if len(s) < 3 {
+				return Response{
+					Text: "Needs one question and at least 2 options",
+				}
+			}
+			poll := struct {
+				Title   string   `json:"title"`
+				Options []string `json:"options"`
+				Multi   bool     `json:"multi"`
+			}{
+				s[0],
+				s[1:],
+				false,
+			}
+			data, err := json.Marshal(&poll)
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			r, err := http.Post("https://www.strawpoll.me/api/v2/polls",
+				"application/json", bytes.NewBuffer(data))
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			var pollcreated struct {
+				ID uint64 `json:"id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&pollcreated); err != nil {
+				r.Body.Close()
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			r.Body.Close()
+			p := fmt.Sprintf("http://www.strawpoll.me/%d", pollcreated.ID)
+			log.Println("new poll:", p)
+			return Response{
+				Text: p,
+			}
+		},
 	}
 	commandsString = func() string {
 		cmds := make([]string, 0, len(commands))
@@ -249,7 +304,7 @@ func duckduckgoImage(query string, max int32) Response {
 	{
 		var err error
 		u := fmt.Sprintf(
-			"http://duckduckgo.com/i.js?o=json&q=%s&s=%d",
+			"https://duckduckgo.com/i.js?o=json&q=%s&s=%d",
 			url.QueryEscape(query),
 			rand.Int31n(max))
 		r, err = http.Get(u)
