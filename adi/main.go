@@ -118,7 +118,6 @@ Usage:
 						Text: "internal error",
 					}
 				}
-				defer r.Body.Close()
 			}
 			var ytr struct {
 				Results []struct {
@@ -127,11 +126,13 @@ Usage:
 				} `json:"results"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&ytr); err != nil {
+				r.Body.Close()
 				log.Println("ERROR:", err)
 				return Response{
 					Text: "internal error",
 				}
 			}
+			r.Body.Close()
 			if len(ytr.Results) == 0 {
 				return Response{
 					Text: "nothing found",
@@ -314,7 +315,6 @@ func duckduckgoImage(query string, max int32) Response {
 				Text: "nothing found",
 			}
 		}
-		defer r.Body.Close()
 	}
 	var ytr struct {
 		Results []struct {
@@ -322,11 +322,13 @@ func duckduckgoImage(query string, max int32) Response {
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&ytr); err != nil {
+		r.Body.Close()
 		log.Println("ERROR:", err)
 		return Response{
 			Text: "nothing found",
 		}
 	}
+	r.Body.Close()
 	if len(ytr.Results) == 0 {
 		return Response{
 			Text: "nothing found",
@@ -346,7 +348,7 @@ func main() {
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 		if err := json.NewDecoder(fd).Decode(&config); err != nil {
 			fd.Close()
@@ -356,7 +358,7 @@ func main() {
 	{
 		f, err := os.OpenFile("./log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0750)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 		defer f.Close()
 		log.SetOutput(f)
