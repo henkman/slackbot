@@ -26,11 +26,15 @@ type Response struct {
 	Text string
 }
 
+const (
+	TLD = "de"
+)
+
 var (
 	reCommand = regexp.MustCompile("^(\\S+)\\s*(.*)$")
 	cvm       *otto.Otto
 	cvmWLock  sync.Mutex
-	gclient   *google.Client
+	gclient   google.Client
 	commands  = map[string]func(text string) Response{
 		"calc": func(text string) Response {
 			if text == "" {
@@ -59,24 +63,6 @@ Usage:
 			if text == "" {
 				return Response{
 					Text: "Finds stuff in the internet",
-				}
-			}
-			const TLD = "de"
-			if gclient == nil {
-				var err error
-				gclient, err = google.New()
-				if err != nil {
-					log.Println("ERROR:", err)
-					return Response{
-						Text: "internal error",
-					}
-				}
-				err = gclient.Init(TLD)
-				if err != nil {
-					log.Println("ERROR:", err)
-					return Response{
-						Text: "internal error",
-					}
 				}
 			}
 			results, err := gclient.Search(TLD, text, "en", 5)
@@ -156,9 +142,9 @@ Usage:
 		},
 		"coin": func(text string) Response {
 			return Response{
-				Text: map[int32]string{
-					0: "heads",
-					1: "tails",
+				Text: []string{
+					"heads",
+					"tails",
 				}[rand.Int31n(2)],
 			}
 		},
@@ -208,7 +194,8 @@ Usage:
 			return
 		},
 		"squirrel": func(text string) Response {
-			return duckduckgoImage("squirrel+images", 1000)
+			const N = 1000
+			return duckduckgoImage("squirrel+images", uint(rand.Int31n(N)))
 		},
 		"image": func(text string) Response {
 			if text == "" {
@@ -216,7 +203,17 @@ Usage:
 					Text: "finds images",
 				}
 			}
-			return duckduckgoImage(text, 1000)
+			return duckduckgoImage(text, 0)
+		},
+		"randomimage": func(text string) Response {
+			const N = 1000
+			if text == "" {
+				return Response{
+					Text: fmt.Sprintf(
+						"gets random image from first %d search results", N),
+				}
+			}
+			return duckduckgoImage(text, uint(rand.Int31n(N)))
 		},
 		"random": func(text string) Response {
 			if text == "" {
@@ -309,14 +306,14 @@ Example: poll animal?, dog, cat, hamster
 	}
 }
 
-func duckduckgoImage(query string, max int32) Response {
+func duckduckgoImage(query string, offset uint) Response {
 	var r *http.Response
 	{
+		u := "https://duckduckgo.com/i.js?o=json&q=" + url.QueryEscape(query)
+		if offset > 0 {
+			u += fmt.Sprintf("&s=%d", offset)
+		}
 		var err error
-		u := fmt.Sprintf(
-			"https://duckduckgo.com/i.js?o=json&q=%s&s=%d",
-			url.QueryEscape(query),
-			rand.Int31n(max))
 		r, err = http.Get(u)
 		if err != nil {
 			log.Println("ERROR:", err)
@@ -377,6 +374,11 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
+	{
+		if err := gclient.Init(TLD); err != nil {
+			log.Fatal(err)
+		}
+	}
 	rand.Seed(time.Now().UnixNano())
 	api := slack.New(config.Key)
 	api.SetDebug(false)
