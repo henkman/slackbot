@@ -235,60 +235,11 @@ Usage:
 				Text: strings.TrimSpace(t),
 			}
 		},
-		"poll": func(text string) Response {
-			if text == "" {
-				return Response{
-					Text: `Creates a poll
-	Example: poll animal?, dog, cat, hamster
-		-> Creates a poll with title animal? and the three animals as choices`,
-				}
-			}
-			s := strings.Split(text, ",")
-			if len(s) < 3 {
-				return Response{
-					Text: "Needs one question and at least 2 options",
-				}
-			}
-			poll := struct {
-				Title   string   `json:"title"`
-				Options []string `json:"options"`
-				Multi   bool     `json:"multi"`
-			}{
-				s[0],
-				s[1:],
-				false,
-			}
-			data, err := json.Marshal(&poll)
-			if err != nil {
-				log.Println("ERROR:", err)
-				return Response{
-					Text: "internal error",
-				}
-			}
-			r, err := http.Post("https://www.strawpoll.me/api/v2/polls",
-				"application/json", bytes.NewBuffer(data))
-			if err != nil {
-				log.Println("ERROR:", err)
-				return Response{
-					Text: "internal error",
-				}
-			}
-			var pollcreated struct {
-				ID uint64 `json:"id"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&pollcreated); err != nil {
-				r.Body.Close()
-				log.Println("ERROR:", err)
-				return Response{
-					Text: "internal error",
-				}
-			}
-			r.Body.Close()
-			p := fmt.Sprintf("http://www.strawpoll.me/%d", pollcreated.ID)
-			log.Println("new poll:", p)
-			return Response{
-				Text: p,
-			}
+		"multipoll": func(text string) Response {
+			return poll(text, true)
+		},
+		"singlepoll": func(text string) Response {
+			return poll(text, false)
 		},
 	}
 	commandsString = func() string {
@@ -299,6 +250,64 @@ Usage:
 		return strings.Join(cmds, ", ")
 	}()
 )
+
+func poll(text string, multi bool) Response {
+	if text == "" {
+		return Response{
+			Text: `Creates a poll
+Example: poll animal?, dog, cat, hamster
+-> Creates a poll with title animal? and the three animals as choices`,
+		}
+	}
+	s := strings.Split(text, ",")
+	if len(s) < 3 {
+		return Response{
+			Text: "Needs one question and at least 2 options",
+		}
+	}
+	preq := struct {
+		Title    string   `json:"title"`
+		Options  []string `json:"options"`
+		Multi    bool     `json:"multi"`
+		Dupcheck string   `json:"dupcheck"`
+	}{
+		s[0],
+		s[1:],
+		multi,
+		"permissive",
+	}
+	data, err := json.Marshal(&preq)
+	if err != nil {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	r, err := http.Post("https://www.strawpoll.me/api/v2/polls",
+		"application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	var pres struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&pres); err != nil {
+		r.Body.Close()
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	r.Body.Close()
+	p := fmt.Sprintf("http://www.strawpoll.me/%d", pres.ID)
+	log.Println("new poll:", p)
+	return Response{
+		Text: p,
+	}
+}
 
 func duckduckgoImage(query string, max int32) Response {
 	var r *http.Response
