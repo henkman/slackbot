@@ -140,6 +140,7 @@ Loop:
 					"Benutzt Spring, das ist geil!",
 					"Hi. Ich habe mir den Fuß ungeknickt und bin krank geschrieben",
 					"Genau, fast",
+					"flöte?",
 				}
 				c := texts[rand.Int31n(int32(len(texts)))]
 				rtm.SendMessage(
