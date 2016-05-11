@@ -65,7 +65,7 @@ Usage:
 					Text: "Finds stuff in the internet",
 				}
 			}
-			results, err := gclient.Search(TLD, text, "en", 5)
+			results, err := gclient.Search(TLD, text, "en", false, 5)
 			if err != nil {
 				log.Println("ERROR:", err.Error())
 				return Response{
@@ -193,17 +193,15 @@ Usage:
 			}
 			return
 		},
+		"image": func(text string) Response {
+			return googleImage(text, true)
+		},
+		"unsafeimage": func(text string) Response {
+			return googleImage(text, false)
+		},
 		"squirrel": func(text string) Response {
 			const N = 1000
 			return duckduckgoImage("squirrel+images", uint(rand.Int31n(N)))
-		},
-		"image": func(text string) Response {
-			if text == "" {
-				return Response{
-					Text: "finds images",
-				}
-			}
-			return duckduckgoImage(text, 0)
 		},
 		"randomimage": func(text string) Response {
 			const N = 1000
@@ -247,6 +245,30 @@ Usage:
 		return strings.Join(cmds, ", ")
 	}()
 )
+
+func googleImage(text string, safe bool) Response {
+	if text == "" {
+		return Response{
+			Text: "finds images",
+		}
+	}
+	images, err := gclient.Images(TLD, text, "de", safe, 50)
+	if err != nil {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	if len(images) == 0 {
+		return Response{
+			Text: "nothing found",
+		}
+	}
+	r := rand.Int31n(int32(len(images)))
+	return Response{
+		Text: images[r].URL,
+	}
+}
 
 func poll(text string, multi bool) Response {
 	if text == "" {
