@@ -138,7 +138,6 @@ Loop:
 					"Hmm, das kann natürlich durchaus sein",
 					"Du kannst tanzen? Das ist mir neu :)",
 					"Benutzt Spring, das ist geil!",
-					"Hi. Ich habe mir den Fuß ungeknickt und bin krank geschrieben",
 					"Genau, fast",
 					"flöte?",
 				}
