@@ -196,8 +196,9 @@ Usage:
 		"image": func(text string) Response {
 			return googleImage(text, true)
 		},
-		"unsafeimage": func(text string) Response {
-			return googleImage(text, false)
+		"bikpin": func(text string) Response {
+			const N = 1000
+			return duckduckgoImage("bikini+pineapple", uint(rand.Int31n(N)))
 		},
 		"squirrel": func(text string) Response {
 			const N = 1000
