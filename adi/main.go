@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -33,7 +32,6 @@ const (
 var (
 	reCommand = regexp.MustCompile("^(\\S+)\\s*(.*)$")
 	cvm       *otto.Otto
-	cvmWLock  sync.Mutex
 	gclient   google.Client
 	commands  = map[string]func(text string) Response{
 		"calc": func(text string) Response {
@@ -154,8 +152,6 @@ Usage:
 					Text: "interactive javascript console\nType reload to reload the VM",
 				}
 			}
-			cvmWLock.Lock()
-			defer cvmWLock.Unlock()
 			if text == "reload" {
 				cvm = otto.New()
 				cvm.Set("console", otto.UndefinedValue())
@@ -194,7 +190,10 @@ Usage:
 			return
 		},
 		"image": func(text string) Response {
-			return googleImage(text, true)
+			return googleImage(text, true, google.ImageType_Any)
+		},
+		"gif": func(text string) Response {
+			return googleImage(text, true, google.ImageType_Animated)
 		},
 		"bikpin": func(text string) Response {
 			const N = 1000
@@ -247,13 +246,13 @@ Usage:
 	}()
 )
 
-func googleImage(text string, safe bool) Response {
+func googleImage(text string, safe bool, typ google.ImageType) Response {
 	if text == "" {
 		return Response{
 			Text: "finds images",
 		}
 	}
-	images, err := gclient.Images(TLD, text, "de", safe, 50)
+	images, err := gclient.Images(TLD, text, "de", safe, typ, 50)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return Response{
