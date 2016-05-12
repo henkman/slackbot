@@ -196,7 +196,7 @@ Usage:
 			return googleImage(text, true, google.ImageType_Animated)
 		},
 		"bikpin": func(text string) Response {
-			const N = 1000
+			const N = 250
 			return duckduckgoImage("bikini+pineapple", uint(rand.Int31n(N)))
 		},
 		"squirrel": func(text string) Response {
