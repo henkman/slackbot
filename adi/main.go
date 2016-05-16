@@ -11,10 +11,11 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
-	"unicode"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/alfredxing/calc/compute"
 	"github.com/henkman/google"
 	"github.com/nlopes/slack"
@@ -30,10 +31,9 @@ const (
 )
 
 var (
-	reCommand = regexp.MustCompile("^(\\S+)\\s*(.*)$")
-	cvm       *otto.Otto
-	gclient   google.Client
-	commands  = map[string]func(text string) Response{
+	cvm      *otto.Otto
+	gclient  google.Client
+	commands = map[string]func(text string) Response{
 		"calc": func(text string) Response {
 			if text == "" {
 				return Response{
@@ -57,7 +57,7 @@ Usage:
 				Text: fmt.Sprintf("%s=%g", text, res),
 			}
 		},
-		"search": func(text string) Response {
+		"web": func(text string) Response {
 			if text == "" {
 				return Response{
 					Text: "Finds stuff in the internet",
@@ -83,7 +83,7 @@ Usage:
 				Text: buf.String(),
 			}
 		},
-		"video": func(text string) Response {
+		"vid": func(text string) Response {
 			if text == "" {
 				return Response{
 					Text: "finds videos",
@@ -189,7 +189,7 @@ Usage:
 			}
 			return
 		},
-		"image": func(text string) Response {
+		"img": func(text string) Response {
 			return googleImage(text, true, google.ImageType_Any)
 		},
 		"gif": func(text string) Response {
@@ -203,7 +203,7 @@ Usage:
 			const N = 1000
 			return duckduckgoImage("squirrel+images", uint(rand.Int31n(N)))
 		},
-		"randomimage": func(text string) Response {
+		"randimg": func(text string) Response {
 			const N = 1000
 			if text == "" {
 				return Response{
@@ -213,7 +213,7 @@ Usage:
 			}
 			return duckduckgoImage(text, uint(rand.Int31n(N)))
 		},
-		"random": func(text string) Response {
+		"rand": func(text string) Response {
 			if text == "" {
 				return Response{
 					Text: "randomly prints one of the comma separated texts given",
@@ -236,15 +236,142 @@ Usage:
 		"singlepoll": func(text string) Response {
 			return poll(text, false)
 		},
+		"tr": func(text string) Response {
+			languages := []string{
+				"af", "ar", "az", "be", "bg", "ca", "cs", "cy", "da", "de",
+				"el", "en", "es", "et", "eu", "fa", "fi", "fr", "ga", "gl",
+				"hi", "hr", "ht", "hu", "hy", "id", "is", "it", "iw", "ja",
+				"ka", "ko", "lt", "lv", "mk", "ms", "mt", "nl", "no", "pl",
+				"pt", "ro", "ru", "sk", "sl", "sq", "sr", "sv", "sw", "th",
+				"tl", "tr", "uk", "ur", "vi", "yi",
+			}
+			help := "translates text. available languages:\n" +
+				strings.Join(languages, ", ")
+			if text == "" {
+				return Response{
+					Text: help,
+				}
+			}
+			s := strings.Index(text, " ")
+			if s == -1 {
+				return Response{
+					Text: help,
+				}
+			}
+			l := text[:s]
+			{
+				ok := false
+				for _, e := range languages {
+					if e == l {
+						ok = true
+						break
+					}
+				}
+				if !ok {
+					return Response{
+						Text: "language not supported",
+					}
+				}
+			}
+			t := text[s:]
+			return googleTranslate(t, l)
+		},
+		"en": func(text string) Response {
+			return googleTranslate(text, "en")
+		},
+		"de": func(text string) Response {
+			return googleTranslate(text, "de")
+		},
+		"fact": func(text string) Response {
+			doc, err := goquery.NewDocument("http://randomfunfacts.com/")
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			return Response{
+				Text: doc.Find("center i").Text(),
+			}
+		},
+		"cartoon": func(text string) Response {
+			doc, err := goquery.NewDocument("http://www.veryfunnycartoons.com/")
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			img, ok := doc.Find("center i img").Attr("src")
+			if !ok {
+				log.Println("ERROR: cartoon img src not found")
+				return Response{
+					Text: "internal error",
+				}
+			}
+			return Response{
+				Text: img,
+			}
+		},
+		"insult": func(text string) Response {
+			doc, err := goquery.NewDocument("http://www.randominsults.net/")
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+			return Response{
+				Text: doc.Find("center i").Text(),
+			}
+		},
 	}
-	commandsString = func() string {
+	commandStrings = func() []string {
 		cmds := make([]string, 0, len(commands))
 		for key, _ := range commands {
 			cmds = append(cmds, key)
 		}
-		return strings.Join(cmds, ", ")
+		sort.Sort(sort.StringSlice(cmds))
+		return cmds
 	}()
+	helpString = strings.Join(commandStrings, ", ")
 )
+
+func googleTranslate(text, tl string) Response {
+	r, err := http.PostForm("https://translate.google.com/translate_a/t",
+		url.Values{
+			"client": []string{"x"},
+			"hl":     []string{"en"},
+			"sl":     []string{"auto"},
+			"text":   []string{text},
+			"tl":     []string{tl},
+		})
+	if err != nil {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	tj := make([]string, 0, 2)
+	if err := json.NewDecoder(r.Body).Decode(&tj); err != nil {
+		r.Body.Close()
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	r.Body.Close()
+	if len(tj) != 2 {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
+	t, l := tj[0], tj[1]
+	return Response{
+		Text: fmt.Sprintf("%s: %s", l, t),
+	}
+}
 
 func googleImage(text string, safe bool, typ google.ImageType) Response {
 	if text == "" {
@@ -371,7 +498,9 @@ func duckduckgoImage(query string, offset uint) Response {
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var config struct {
-		Key string `json:"key"`
+		Key              string `json:"key"`
+		ShortCommands    bool   `json:"short_commands"`
+		ShortCommandSign string `json:"short_command_sign"`
 	}
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
@@ -401,6 +530,10 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	var (
+		reToMe    *regexp.Regexp
+		reCommand *regexp.Regexp
+	)
 	rand.Seed(time.Now().UnixNano())
 	api := slack.New(config.Key)
 	api.SetDebug(false)
@@ -413,24 +546,35 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
-			case *slack.MessageEvent:
-				t := strings.TrimSpace(ev.Text)
-				s := fmt.Sprintf("<@%s>", rtm.GetInfo().User.ID)
-				if strings.Index(t, s) != 0 {
-					continue Loop
+				if config.ShortCommands {
+					reToMe = regexp.MustCompile(fmt.Sprintf("^(?:<@%s>\\s*|%s)",
+						rtm.GetInfo().User.ID,
+						config.ShortCommandSign))
+				} else {
+					reToMe = regexp.MustCompile(fmt.Sprintf("^<@%s>\\s*",
+						rtm.GetInfo().User.ID))
 				}
-				t = strings.TrimLeftFunc(t[len(s):], unicode.IsSpace)
-				log.Println(ev.User, t)
-				m := reCommand.FindStringSubmatch(t)
+				reCommand = regexp.MustCompile(
+					fmt.Sprintf("(?s)^(%s)\\s*(.*)\\s*$",
+						strings.Join(commandStrings, "|")))
+			case *slack.MessageEvent:
+				{
+					m := reToMe.FindStringSubmatch(ev.Text)
+					if m == nil {
+						continue Loop
+					}
+					ev.Text = ev.Text[len(m[0]):]
+				}
+				m := reCommand.FindStringSubmatch(ev.Text)
 				if m == nil {
 					rtm.SendMessage(rtm.NewOutgoingMessage(
-						"commands: "+commandsString, ev.Channel))
+						"commands: "+helpString, ev.Channel))
 					continue Loop
 				}
 				cmd, ok := commands[m[1]]
 				if !ok {
 					rtm.SendMessage(rtm.NewOutgoingMessage(
-						"commands: "+commandsString, ev.Channel))
+						"commands: "+helpString, ev.Channel))
 					continue Loop
 				}
 				r := cmd(m[2])
