@@ -509,6 +509,7 @@ func main() {
 		}
 		if err := json.NewDecoder(fd).Decode(&config); err != nil {
 			fd.Close()
+			log.Fatal(err)
 		}
 		fd.Close()
 	}
