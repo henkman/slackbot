@@ -19,8 +19,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/alfredxing/calc/compute"
+	"github.com/cznic/ql"
 	"github.com/henkman/google"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/nlopes/slack"
 	"github.com/robertkrimen/otto"
 )
@@ -1028,19 +1028,49 @@ func getUsersSortByPoints() ([]User, error) {
 }
 
 func updateUser(user User) {
-	db.Exec("UPDATE user SET level=?, points=? WHERE id=?",
-		user.Level, user.Points, user.ID)
+	tx, err := db.Begin()
+	if err != nil {
+		log.Println("ERROR:", err)
+		return
+	}
+	if _, err := tx.Exec(
+		"UPDATE user SET level=uint8($1), points=uint64($2) WHERE id==$3",
+		user.Level, user.Points, user.ID); err != nil {
+		log.Println("ERROR:", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Println("ERROR:", err)
+	}
 }
 
 func getCreateUser(id string) User {
 	var points uint64
 	var level Level
 	if err := db.QueryRow(
-		"SELECT level, points FROM user WHERE id=?",
+		"SELECT level, points FROM user WHERE id==$1",
 		id).Scan(&level, &points); err != nil {
 		user := User{ID: id, Level: defaultLevel, Points: 0}
-		db.Exec("INSERT into user(id, level, points) values(?, ?, ?)",
-			user.ID, user.Level, user.Points)
+		if err != sql.ErrNoRows {
+			log.Println("ERROR:", err)
+			return user
+		}
+		{
+			tx, err := db.Begin()
+			if err != nil {
+				log.Println("ERROR:", err)
+				return user
+			}
+			if _, err := tx.Exec(
+				"INSERT into user(id, level, points) values($1, uint8($2), uint64($3))",
+				user.ID, user.Level, user.Points); err != nil {
+				log.Println("ERROR:", err)
+				return user
+			}
+			if err := tx.Commit(); err != nil {
+				log.Println("ERROR:", err)
+			}
+		}
 		return user
 	}
 	return User{ID: id, Level: level, Points: points}
@@ -1090,7 +1120,8 @@ func main() {
 		defaultLevel = config.DefaultLevel
 	}
 	{
-		d, err := sql.Open("sqlite3", "./slack.db")
+		ql.RegisterDriver()
+		d, err := sql.Open("ql", "./slack.ql")
 		if err != nil {
 			log.Panicln(err)
 		}
