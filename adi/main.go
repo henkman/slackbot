@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,18 +13,38 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/alfredxing/calc/compute"
 	"github.com/henkman/google"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/nlopes/slack"
 	"github.com/robertkrimen/otto"
 )
 
 type Response struct {
-	Text string
+	Text   string
+	Charge bool
+}
+
+type Level uint8
+
+type User struct {
+	ID     string
+	Level  Level
+	Points uint64
+}
+
+type CommandFunc func(text string, u User, rtm *slack.RTM) Response
+
+type Command struct {
+	Names         []string
+	RequiredLevel Level
+	Price         uint64
+	Func          CommandFunc
 }
 
 const (
@@ -31,19 +52,391 @@ const (
 )
 
 var (
-	cvm      *otto.Otto
-	gclient  google.Client
-	commands = map[string]func(text string) Response{
-		"calc": func(text string) Response {
+	db             *sql.DB
+	defaultLevel   Level
+	cvm            *otto.Otto
+	gclient        google.Client
+	commandMap     = map[string]Command{}
+	commandStrings = func() []string {
+		cmds := make([]string, 0, len(commands))
+		for _, cmd := range commands {
+			for _, name := range cmd.Names {
+				cmds = append(cmds, name)
+			}
+		}
+		sort.Sort(sort.StringSlice(cmds))
+		return cmds
+	}()
+	helpString = strings.Join(commandStrings, ", ")
+)
+
+var commands = []Command{
+	{
+		Names:         []string{"rank"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			us, err := getUsersSortByPoints()
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			sus, err := rtm.GetUsers()
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			s := bytes.NewBufferString("")
+			for i, o := range us {
+				for _, su := range sus {
+					if su.ID == o.ID {
+						fmt.Fprintf(s, "%d. %s (%d)\n",
+							i+1, su.Name, o.Points)
+					}
+				}
+			}
+			return Response{
+				Text:   s.String(),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"setpts"},
+		RequiredLevel: 100,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: "set points of user",
+				}
+			}
+			s := strings.Split(text, " ")
+			if len(s) != 2 {
+				return Response{
+					Text: "syntax: setpoints [username] [points]",
+				}
+			}
+			p, err := strconv.ParseUint(s[1], 10, 64)
+			if err != nil {
+				return Response{
+					Text: "syntax: setpoints [username] [points]",
+				}
+			}
+			us, err := getUserByName(rtm, s[0])
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			up := getCreateUser(us.ID)
+			up.Points = p
+			updateUser(up)
+			return Response{
+				Text: fmt.Sprintf("%s points are now %d",
+					us.Name, up.Points),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"setlvl"},
+		RequiredLevel: 100,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: "set level of user",
+				}
+			}
+			s := strings.Split(text, " ")
+			if len(s) != 2 {
+				return Response{
+					Text: "syntax: setlevel [username] [level]",
+				}
+			}
+			l, err := strconv.ParseUint(s[1], 10, 8)
+			if err != nil {
+				return Response{
+					Text: "syntax: setlevel [username] [level]",
+				}
+			}
+			us, err := getUserByName(rtm, s[0])
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			up := getCreateUser(us.ID)
+			up.Level = Level(l)
+			updateUser(up)
+			return Response{
+				Text: fmt.Sprintf("%s level is now %d",
+					us.Name, up.Level),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"cost"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: "find out the price of a command",
+				}
+			}
+			cmd, ok := commandMap[text]
+			if !ok {
+				return Response{
+					Text: "command not found",
+				}
+			}
+			return Response{
+				Text:   fmt.Sprintf("%s costs %d", text, cmd.Price),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"givepts"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: "give points to username",
+				}
+			}
+			s := strings.Split(text, " ")
+			if len(s) != 2 {
+				return Response{
+					Text: "syntax: givepoints [username] [points|all]",
+				}
+			}
+			un := s[0]
+			var n uint64
+			if s[1] == "all" {
+				n = u.Points
+			} else {
+				t, err := strconv.ParseUint(s[1], 10, 64)
+				if err != nil {
+					return Response{
+						Text: "syntax: givepoints [username] [points|all]",
+					}
+				}
+				if t > u.Points {
+					return Response{
+						Text: fmt.Sprintf(
+							"not enough points. your points: %d",
+							u.Points),
+					}
+				}
+				n = t
+			}
+			if n == 0 {
+				return Response{
+					Text: "Must be more than 0 points",
+				}
+			}
+			us, err := getUserByName(rtm, un)
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			if us.ID == u.ID {
+				return Response{
+					Text: "can't give points to yourself",
+				}
+			}
+			up := getCreateUser(us.ID)
+			up.Points += n
+			u.Points -= n
+			updateUser(u)
+			updateUser(up)
+			return Response{
+				Text: fmt.Sprintf("%s points %d. your points: %d",
+					us.Name, up.Points, u.Points),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"bet"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: "bet points to double them",
+				}
+			}
+			var n uint64
+			if text == "all" {
+				n = u.Points
+			} else {
+				t, err := strconv.ParseUint(text, 10, 64)
+				if err != nil {
+					return Response{
+						Text: "syntax: roulette [points|all]",
+					}
+				}
+				if t > u.Points {
+					return Response{
+						Text: fmt.Sprintf(
+							"not enough points. your points: %d",
+							u.Points),
+					}
+				}
+				n = t
+			}
+			if n == 0 {
+				return Response{
+					Text: "Must be more than 0 points",
+				}
+			}
+			var t string
+			if rand.Int31n(2) == 1 {
+				n *= 2
+				u.Points += n
+				t = fmt.Sprintf("You won %d points. New points %d",
+					n, u.Points)
+			} else {
+				u.Points -= n
+				t = fmt.Sprintf("You lost %d points. New points %d",
+					n, u.Points)
+			}
+			updateUser(u)
+			return Response{
+				Text:   t,
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"pts"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: fmt.Sprintf("your points: %d", u.Points),
+				}
+			}
+			us, err := getUserByName(rtm, text)
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			up := getCreateUser(us.ID)
+			return Response{
+				Text:   fmt.Sprintf("%s points: %d", us.Name, up.Points),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"lvl"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: fmt.Sprintf("your level: %d", u.Level),
+				}
+			}
+			us, err := getUserByName(rtm, text)
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			up := getCreateUser(us.ID)
+			return Response{
+				Text:   fmt.Sprintf("%s level: %d", us.Name, up.Level),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"id"},
+		RequiredLevel: 10,
+		Price:         0,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			if text == "" {
+				return Response{
+					Text: fmt.Sprintf("your id: %s", u.ID),
+				}
+			}
+			us, err := getUserByName(rtm, text)
+			if err != nil {
+				log.Println("ERROR:", err.Error())
+				return Response{
+					Text: "internal error",
+				}
+			}
+			if us == nil {
+				return Response{
+					Text: "user not found",
+				}
+			}
+			return Response{
+				Text:   fmt.Sprintf("%s id: %s", us.Name, us.ID),
+				Charge: true,
+			}
+		},
+	},
+	{
+		Names:         []string{"calc"},
+		RequiredLevel: 10,
+		Price:         5,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			if text == "" {
 				return Response{
 					Text: `A Calculator
-Usage:
-  Operators: +, -, *, /, ^, %%
-  Functions: sin, cos, tan, cot, sec, csc,
-             asin, acos, atan, acot, asec,
-             acsc, sqrt, log, lg, ln, abs
-  Constants: e, pi, π`,
+	Usage:
+	  Operators: +, -, *, /, ^, %%
+	  Functions: sin, cos, tan, cot, sec, csc,
+	             asin, acos, atan, acot, asec,
+	             acsc, sqrt, log, lg, ln, abs
+	  Constants: e, pi, π`,
 				}
 			}
 			res, err := compute.Evaluate(text)
@@ -54,10 +447,16 @@ Usage:
 				}
 			}
 			return Response{
-				Text: fmt.Sprintf("%s=%g", text, res),
+				Text:   fmt.Sprintf("%s=%g", text, res),
+				Charge: true,
 			}
 		},
-		"web": func(text string) Response {
+	},
+	{
+		Names:         []string{"web"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			if text == "" {
 				return Response{
 					Text: "Finds stuff in the internet",
@@ -80,10 +479,16 @@ Usage:
 				fmt.Fprintf(buf, "%s %s\n", res.URL, res.Content)
 			}
 			return Response{
-				Text: buf.String(),
+				Text:   buf.String(),
+				Charge: true,
 			}
 		},
-		"vid": func(text string) Response {
+	},
+	{
+		Names:         []string{"vid"},
+		RequiredLevel: 10,
+		Price:         30,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			if text == "" {
 				return Response{
 					Text: "finds videos",
@@ -135,18 +540,30 @@ Usage:
 			}
 			o := rand.Int31n(int32(len(ytr.Results)))
 			return Response{
-				Text: "https://www.youtube.com/watch?v=" + ids[o],
+				Text:   "https://www.youtube.com/watch?v=" + ids[o],
+				Charge: true,
 			}
 		},
-		"coin": func(text string) Response {
+	},
+	{
+		Names:         []string{"coin"},
+		RequiredLevel: 10,
+		Price:         1,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return Response{
 				Text: []string{
 					"heads",
 					"tails",
 				}[rand.Int31n(2)],
+				Charge: true,
 			}
 		},
-		"js": func(text string) (r Response) {
+	},
+	{
+		Names:         []string{"js"},
+		RequiredLevel: 10,
+		Price:         50,
+		Func: func(text string, u User, rtm *slack.RTM) (r Response) {
 			if text == "" {
 				return Response{
 					Text: "interactive javascript console\nType reload to reload the VM",
@@ -184,26 +601,68 @@ Usage:
 				}
 			} else {
 				r = Response{
-					Text: val.String(),
+					Text:   val.String(),
+					Charge: true,
 				}
 			}
 			return
 		},
-		"img": func(text string) Response {
+	},
+	{
+		Names:         []string{"img"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return googleImage(text, true, google.ImageType_Any)
 		},
-		"gif": func(text string) Response {
+	},
+	{
+		Names:         []string{"gif"},
+		RequiredLevel: 10,
+		Price:         30,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return googleImage(text, true, google.ImageType_Animated)
 		},
-		"bikpin": func(text string) Response {
-			const N = 250
+	},
+	{
+		Names:         []string{"nsfwimg"},
+		RequiredLevel: 80,
+		Price:         100,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			return googleImage(text, false, google.ImageType_Any)
+		},
+	},
+	{
+		Names:         []string{"nsfwgif"},
+		RequiredLevel: 80,
+		Price:         100,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			return googleImage(text, false, google.ImageType_Animated)
+		},
+	},
+	{
+		Names:         []string{"bikpin"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
+			const N = 400
 			return duckduckgoImage("bikini+pineapple", uint(rand.Int31n(N)))
 		},
-		"squirrel": func(text string) Response {
+	},
+	{
+		Names:         []string{"squirl"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			const N = 1000
 			return duckduckgoImage("squirrel+images", uint(rand.Int31n(N)))
 		},
-		"randimg": func(text string) Response {
+	},
+	{
+		Names:         []string{"rndimg"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			const N = 1000
 			if text == "" {
 				return Response{
@@ -213,7 +672,12 @@ Usage:
 			}
 			return duckduckgoImage(text, uint(rand.Int31n(N)))
 		},
-		"rand": func(text string) Response {
+	},
+	{
+		Names:         []string{"rnd"},
+		RequiredLevel: 10,
+		Price:         2,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			if text == "" {
 				return Response{
 					Text: "randomly prints one of the comma separated texts given",
@@ -222,21 +686,38 @@ Usage:
 			c := strings.Split(text, ",")
 			if len(c) == 1 {
 				return Response{
-					Text: strings.TrimSpace(c[0]),
+					Text:   strings.TrimSpace(c[0]),
+					Charge: true,
 				}
 			}
 			t := c[rand.Int31n(int32(len(c)))]
 			return Response{
-				Text: strings.TrimSpace(t),
+				Text:   strings.TrimSpace(t),
+				Charge: true,
 			}
 		},
-		"multipoll": func(text string) Response {
+	},
+	{
+		Names:         []string{"mpoll"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return poll(text, true)
 		},
-		"singlepoll": func(text string) Response {
+	},
+	{
+		Names:         []string{"spoll"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return poll(text, false)
 		},
-		"tr": func(text string) Response {
+	},
+	{
+		Names:         []string{"tr"},
+		RequiredLevel: 10,
+		Price:         2,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			languages := []string{
 				"af", "ar", "az", "be", "bg", "ca", "cs", "cy", "da", "de",
 				"el", "en", "es", "et", "eu", "fa", "fi", "fr", "ga", "gl",
@@ -276,13 +757,28 @@ Usage:
 			t := text[s:]
 			return googleTranslate(t, l)
 		},
-		"en": func(text string) Response {
+	},
+	{
+		Names:         []string{"en"},
+		RequiredLevel: 10,
+		Price:         2,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return googleTranslate(text, "en")
 		},
-		"de": func(text string) Response {
+	},
+	{
+		Names:         []string{"de"},
+		RequiredLevel: 10,
+		Price:         2,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			return googleTranslate(text, "de")
 		},
-		"fact": func(text string) Response {
+	},
+	{
+		Names:         []string{"fact"},
+		RequiredLevel: 10,
+		Price:         5,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			doc, err := goquery.NewDocument("http://randomfunfacts.com/")
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -291,10 +787,16 @@ Usage:
 				}
 			}
 			return Response{
-				Text: doc.Find("center i").Text(),
+				Text:   doc.Find("center i").Text(),
+				Charge: true,
 			}
 		},
-		"cartoon": func(text string) Response {
+	},
+	{
+		Names:         []string{"toon"},
+		RequiredLevel: 10,
+		Price:         10,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			doc, err := goquery.NewDocument("http://www.veryfunnycartoons.com/")
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -310,10 +812,16 @@ Usage:
 				}
 			}
 			return Response{
-				Text: img,
+				Text:   img,
+				Charge: true,
 			}
 		},
-		"insult": func(text string) Response {
+	},
+	{
+		Names:         []string{"insult"},
+		RequiredLevel: 10,
+		Price:         5,
+		Func: func(text string, u User, rtm *slack.RTM) Response {
 			doc, err := goquery.NewDocument("http://www.randominsults.net/")
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -322,20 +830,12 @@ Usage:
 				}
 			}
 			return Response{
-				Text: doc.Find("center i").Text(),
+				Text:   doc.Find("center i").Text(),
+				Charge: true,
 			}
 		},
-	}
-	commandStrings = func() []string {
-		cmds := make([]string, 0, len(commands))
-		for key, _ := range commands {
-			cmds = append(cmds, key)
-		}
-		sort.Sort(sort.StringSlice(cmds))
-		return cmds
-	}()
-	helpString = strings.Join(commandStrings, ", ")
-)
+	},
+}
 
 func googleTranslate(text, tl string) Response {
 	r, err := http.PostForm("https://translate.google.com/translate_a/t",
@@ -369,7 +869,8 @@ func googleTranslate(text, tl string) Response {
 	}
 	t, l := tj[0], tj[1]
 	return Response{
-		Text: fmt.Sprintf("%s: %s", l, t),
+		Text:   fmt.Sprintf("%s: %s", l, t),
+		Charge: true,
 	}
 }
 
@@ -393,7 +894,8 @@ func googleImage(text string, safe bool, typ google.ImageType) Response {
 	}
 	r := rand.Int31n(int32(len(images)))
 	return Response{
-		Text: images[r].URL,
+		Text:   images[r].URL,
+		Charge: true,
 	}
 }
 
@@ -451,7 +953,8 @@ Example: poll animal?, dog, cat, hamster
 	p := fmt.Sprintf("http://www.strawpoll.me/%d", pres.ID)
 	log.Println("new poll:", p)
 	return Response{
-		Text: p,
+		Text:   p,
+		Charge: true,
 	}
 }
 
@@ -491,44 +994,112 @@ func duckduckgoImage(query string, offset uint) Response {
 	}
 	o := rand.Int31n(int32(len(ytr.Results)))
 	return Response{
-		Text: ytr.Results[o].Image,
+		Text:   ytr.Results[o].Image,
+		Charge: true,
 	}
+}
+
+func getUserByName(rtm *slack.RTM, name string) (*slack.User, error) {
+	us, err := rtm.GetUsers()
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range us {
+		if o.Name == name {
+			return &o, nil
+		}
+	}
+	return nil, nil
+}
+
+func getUsersSortByPoints() ([]User, error) {
+	r, err := db.Query("SELECT id, level, points FROM user ORDER BY points desc")
+	if err != nil {
+		return nil, err
+	}
+	us := make([]User, 0, 10)
+	for r.Next() {
+		var u User
+		r.Scan(&u.ID, &u.Level, &u.Points)
+		us = append(us, u)
+	}
+	r.Close()
+	return us, nil
+}
+
+func updateUser(user User) {
+	db.Exec("UPDATE user SET level=?, points=? WHERE id=?",
+		user.Level, user.Points, user.ID)
+}
+
+func getCreateUser(id string) User {
+	var points uint64
+	var level Level
+	if err := db.QueryRow(
+		"SELECT level, points FROM user WHERE id=?",
+		id).Scan(&level, &points); err != nil {
+		user := User{ID: id, Level: defaultLevel, Points: 0}
+		db.Exec("INSERT into user(id, level, points) values(?, ?, ?)",
+			user.ID, user.Level, user.Points)
+		return user
+	}
+	return User{ID: id, Level: level, Points: points}
 }
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	var config struct {
-		Key              string `json:"key"`
-		ShortCommands    bool   `json:"short_commands"`
-		ShortCommandSign string `json:"short_command_sign"`
+	{
+		for _, cmd := range commands {
+			for _, name := range cmd.Names {
+				commandMap[name] = cmd
+			}
+		}
 	}
 	{
-		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
+		f, err := os.OpenFile("./log", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0750)
 		if err != nil {
-			log.Fatal(err)
-		}
-		if err := json.NewDecoder(fd).Decode(&config); err != nil {
-			fd.Close()
-			log.Fatal(err)
-		}
-		fd.Close()
-	}
-	{
-		f, err := os.OpenFile("./log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0750)
-		if err != nil {
-			log.Fatal(err)
+			log.Panicln(err)
 		}
 		defer f.Close()
 		log.SetOutput(f)
 	}
-	defer func() {
-		if err := recover(); err != nil {
-			log.Fatal(err)
+	var (
+		key              string
+		shortCommands    bool
+		shortCommandSign string
+	)
+	{
+		var config struct {
+			Key              string `json:"key"`
+			ShortCommands    bool   `json:"short_commands"`
+			ShortCommandSign string `json:"short_command_sign"`
+			DefaultLevel     Level  `json:"default_level"`
 		}
-	}()
+		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
+		if err != nil {
+			log.Panicln(err)
+		}
+		if err := json.NewDecoder(fd).Decode(&config); err != nil {
+			fd.Close()
+			log.Panicln(err)
+		}
+		fd.Close()
+		key = config.Key
+		shortCommands = config.ShortCommands
+		shortCommandSign = config.ShortCommandSign
+		defaultLevel = config.DefaultLevel
+	}
+	{
+		d, err := sql.Open("sqlite3", "./slack.db")
+		if err != nil {
+			log.Panicln(err)
+		}
+		defer d.Close()
+		db = d
+	}
 	{
 		if err := gclient.Init(TLD); err != nil {
-			log.Fatal(err)
+			log.Panicln(err)
 		}
 	}
 	var (
@@ -536,7 +1107,7 @@ func main() {
 		reCommand *regexp.Regexp
 	)
 	rand.Seed(time.Now().UnixNano())
-	api := slack.New(config.Key)
+	api := slack.New(key)
 	api.SetDebug(false)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
@@ -547,16 +1118,16 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
-				if config.ShortCommands {
+				if shortCommands {
 					reToMe = regexp.MustCompile(fmt.Sprintf("^(?:<@%s>\\s*|%s)",
 						rtm.GetInfo().User.ID,
-						config.ShortCommandSign))
+						shortCommandSign))
 				} else {
 					reToMe = regexp.MustCompile(fmt.Sprintf("^<@%s>\\s*",
 						rtm.GetInfo().User.ID))
 				}
 				reCommand = regexp.MustCompile(
-					fmt.Sprintf("(?s)^(%s)\\s*(.*)\\s*$",
+					fmt.Sprintf("(?s)^(%s)(?:\\s+(.+))?\\s*$",
 						strings.Join(commandStrings, "|")))
 			case *slack.MessageEvent:
 				{
@@ -566,20 +1137,48 @@ Loop:
 					}
 					ev.Text = ev.Text[len(m[0]):]
 				}
+				log.Println(ev.User, ev.Text)
 				m := reCommand.FindStringSubmatch(ev.Text)
 				if m == nil {
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						"commands: "+helpString, ev.Channel))
 					continue Loop
 				}
-				cmd, ok := commands[m[1]]
+				cmd, ok := commandMap[m[1]]
 				if !ok {
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						"commands: "+helpString, ev.Channel))
 					continue Loop
 				}
-				r := cmd(m[2])
-				rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
+				u := getCreateUser(ev.User)
+				if u.Level < cmd.RequiredLevel {
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						fmt.Sprintf(
+							"unprivileged. your level: %d. required: %d",
+							u.Level, cmd.RequiredLevel),
+						ev.Channel))
+					continue Loop
+				}
+				if cmd.Price > u.Points {
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						fmt.Sprintf(
+							"not enough points. your points: %d. required: %d",
+							u.Points, cmd.Price),
+						ev.Channel))
+					continue Loop
+				}
+				r := cmd.Func(m[2], u, rtm)
+				if r.Text != "" {
+					rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
+				}
+				if cmd.Price > 0 && r.Charge {
+					if cmd.Price > u.Points {
+						u.Points = 0
+					} else {
+						u.Points -= cmd.Price
+					}
+					updateUser(u)
+				}
 			case *slack.PresenceChangeEvent:
 			case *slack.LatencyReport:
 			case *slack.RTMError:
