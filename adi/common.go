@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"math/rand"
+	"math"
+
 	"sort"
 	"strconv"
 	"strings"
@@ -19,16 +20,95 @@ type UsersByRank []User
 
 func (a UsersByRank) Len() int           { return len(a) }
 func (a UsersByRank) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a UsersByRank) Less(i, j int) bool { return a[i].Points < a[j].Points }
+func (a UsersByRank) Less(i, j int) bool { return a[i].Points > a[j].Points }
 
 func init() {
+	commandFuncs["lottery"] = func(text string, u *User, rtm *slack.RTM) Response {
+		lot := &bank.Lottery
+		lot.Access.Lock()
+		defer lot.Access.Unlock()
+		if text == "" {
+			return Response{
+				Text: fmt.Sprintf(
+					"tickets[price:%d, sold:%d], drawing:%s, pot:%d | try 'lottery help' for help",
+					lot.TicketPrice,
+					lot.TicketsSold,
+					lot.LastDraw.Add(lot.DrawEvery).UTC().Format("02.Jan 15:04 MST"),
+					lot.Pot,
+				),
+			}
+		}
+		if text == "help" {
+			return Response{
+				Text: `The lottery is drawn periodically. Users can buy multiple tickets.
+One of the sold tickets is chosen as winner and gets the whole pot.
+If a drawing comes up and only one user bought tickets:
+	- bought ticket(s) stay in the game
+	- bank pays a small sum into the pot if it has the cash
+use 'lottery enter [number of tickets]' to buy tickets`,
+			}
+		}
+		s := strings.Split(text, " ")
+		if len(s) != 2 || s[0] != "enter" {
+			return Response{
+				Text: "syntax: lottery enter [number of tickets]",
+			}
+		}
+		var n uint64
+		{
+			t, err := strconv.ParseUint(s[1], 10, 64)
+			if err != nil {
+				return Response{
+					Text: "syntax: lottery enter [number of tickets]",
+				}
+			}
+			if t == 0 {
+				return Response{
+					Text: "Needs to be at least 1",
+				}
+			}
+			if mulOverflows(uint64(lot.TicketPrice), t) ||
+				lot.TicketsSold > (math.MaxUint64-t) {
+				return Response{
+					Text: "can't buy that much tickets",
+				}
+			}
+			n = t
+		}
+		p := lot.TicketPrice * Points(n)
+		var src Account = &u.Points
+		if p > src.Balance() {
+			return Response{
+				Text: "you do not have enough points.",
+			}
+		}
+		ts, ok := lot.Tickets[u.ID]
+		if ok {
+			if ts > (math.MaxUint64 - n) {
+				return Response{
+					Text: "can't buy that much tickets",
+				}
+			}
+			lot.Tickets[u.ID] += n
+		} else {
+			lot.Tickets[u.ID] = n
+		}
+		lot.TicketsSold += n
+		src.Sub(p)
+		lot.Pot.Add(p)
+		return Response{
+			Text: fmt.Sprintf("you bought %d tickets for %d. pot: %d",
+				n, p, lot.Pot.Balance(),
+			),
+			Charge: true,
+		}
+	}
 	commandFuncs["rank"] = func(text string, u *User, rtm *slack.RTM) Response {
-		us := make([]User, 0, len(users))
+		us := make([]User, len(users))
 		for i, o := range users {
 			us[i] = o
 		}
 		sort.Sort(UsersByRank(us))
-
 		sus, err := rtm.GetUsers()
 		if err != nil {
 			log.Println("ERROR:", err.Error())
@@ -42,6 +122,7 @@ func init() {
 				if su.ID == o.ID {
 					fmt.Fprintf(s, "%d. %s (%d)\n",
 						i+1, su.Name, o.Points)
+					break
 				}
 			}
 		}
@@ -50,41 +131,46 @@ func init() {
 			Charge: true,
 		}
 	}
-	commandFuncs["setpts"] = func(text string, u *User, rtm *slack.RTM) Response {
+	commandFuncs["trpts"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "set points of user",
+				Text: "transfer points",
 			}
 		}
 		s := strings.Split(text, " ")
-		if len(s) != 2 {
+		if len(s) != 3 {
 			return Response{
-				Text: "syntax: setpoints [username] [points]",
+				Text: "syntax: trpts [user|bank] [user|bank] [points|all]",
 			}
 		}
-		p, err := strconv.ParseUint(s[1], 10, 64)
-		if err != nil {
+		src := getAccountByName(rtm, s[0])
+		if src == nil {
 			return Response{
-				Text: "syntax: setpoints [username] [points]",
+				Text: fmt.Sprintf("user %s not found", s[0]),
 			}
 		}
-		us, err := getUserByName(rtm, s[0])
-		if err != nil {
-			log.Println("ERROR:", err.Error())
+		n, err := parsePoints(src, s[0], s[2])
+		if err != "" {
 			return Response{
-				Text: "internal error",
+				Text: err,
 			}
 		}
-		if us == nil {
+		dst := getAccountByName(rtm, s[1])
+		if dst == nil {
 			return Response{
-				Text: "user not found",
+				Text: fmt.Sprintf("user %s not found", s[1]),
 			}
 		}
-		up := getCreateUser(us.ID)
-		up.Points = p
+		if src == dst {
+			return Response{
+				Text: "source and destination can not be the same",
+			}
+		}
+		src.Sub(n)
+		dst.Add(n)
 		return Response{
-			Text: fmt.Sprintf("%s points are now %d",
-				us.Name, up.Points),
+			Text: fmt.Sprintf("%s points are now %d. %s points are now %d",
+				s[0], src.Balance(), s[1], dst.Balance()),
 			Charge: true,
 		}
 	}
@@ -97,22 +183,16 @@ func init() {
 		s := strings.Split(text, " ")
 		if len(s) != 2 {
 			return Response{
-				Text: "syntax: setlevel [username] [level]",
+				Text: "syntax: setlevel [user] [level]",
 			}
 		}
 		l, err := strconv.ParseUint(s[1], 10, 8)
 		if err != nil {
 			return Response{
-				Text: "syntax: setlevel [username] [level]",
+				Text: "syntax: setlevel [user] [level]",
 			}
 		}
-		us, err := getUserByName(rtm, s[0])
-		if err != nil {
-			log.Println("ERROR:", err.Error())
-			return Response{
-				Text: "internal error",
-			}
-		}
+		us := getUserByName(rtm, s[0])
 		if us == nil {
 			return Response{
 				Text: "user not found",
@@ -167,7 +247,7 @@ func init() {
 				Text: "command not found",
 			}
 		}
-		cmd.Price = p
+		cmd.Price = Points(p)
 		return Response{
 			Text:   fmt.Sprintf("%s now costs %d", cmd.Name, cmd.Price),
 			Charge: true,
@@ -207,106 +287,123 @@ func init() {
 	commandFuncs["givepts"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "give points to username",
+				Text: "give points to user",
 			}
 		}
 		s := strings.Split(text, " ")
 		if len(s) != 2 {
 			return Response{
-				Text: "syntax: givepoints [username] [points|all]",
+				Text: "syntax: givepoints [user] [points|all]",
 			}
 		}
-		un := s[0]
-		var n uint64
-		if s[1] == "all" {
-			n = u.Points
-		} else {
-			t, err := strconv.ParseUint(s[1], 10, 64)
-			if err != nil {
-				return Response{
-					Text: "syntax: givepoints [username] [points|all]",
-				}
-			}
-			if t > u.Points {
-				return Response{
-					Text: fmt.Sprintf(
-						"not enough points. your points: %d",
-						u.Points),
-				}
-			}
-			n = t
-		}
-		if n == 0 {
+		var src, dst Account
+		src = &u.Points
+		n, err := parsePoints(src, "", s[1])
+		if err != "" {
 			return Response{
-				Text: "Must be more than 0 points",
+				Text: err,
 			}
 		}
-		us, err := getUserByName(rtm, un)
-		if err != nil {
-			log.Println("ERROR:", err.Error())
-			return Response{
-				Text: "internal error",
-			}
-		}
-		if us == nil {
+		dst = getAccountByName(rtm, s[0])
+		if dst == nil {
 			return Response{
 				Text: "user not found",
 			}
 		}
-		if us.ID == u.ID {
+		if src == dst {
 			return Response{
 				Text: "can't give points to yourself",
 			}
 		}
-		up := getCreateUser(us.ID)
-		up.Add(n)
-		u.Sub(n)
+		src.Sub(n)
+		dst.Add(n)
 		return Response{
 			Text: fmt.Sprintf("%s points %d. your points: %d",
-				us.Name, up.Points, u.Points),
+				s[0], dst.Balance(), src.Balance()),
 			Charge: true,
 		}
 	}
-	commandFuncs["bet"] = func(text string, u *User, rtm *slack.RTM) Response {
+	commandFuncs["duel"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "bet points to double them",
+				Text: "challenge somebody to get their points",
 			}
 		}
-		var n uint64
-		if text == "all" {
-			n = u.Points
-		} else {
-			t, err := strconv.ParseUint(text, 10, 64)
-			if err != nil {
+		s := strings.Split(text, " ")
+		if len(s) != 2 {
+			return Response{
+				Text: "syntax: duel [user] [points|all]",
+			}
+		}
+		var src, dst Account
+		src = &u.Points
+		dst = getAccountByName(rtm, s[0])
+		if dst == nil {
+			return Response{
+				Text: "user not found",
+			}
+		}
+		if src == dst {
+			return Response{
+				Text: "can't duel yourself",
+			}
+		}
+		if dst.Balance() == 0 {
+			return Response{
+				Text: fmt.Sprintf("%s has no points", s[0]),
+			}
+		}
+		var n Points
+		if s[1] == "all" {
+			if src.Balance() == 0 {
 				return Response{
-					Text: "syntax: roulette [points|all]",
+					Text: "you have no points",
 				}
 			}
-			if t > u.Points {
+			if src.Balance() > dst.Balance() {
+				n = dst.Balance()
+			} else {
+				n = src.Balance()
+			}
+		} else {
+			t, err := strconv.ParseUint(s[1], 10, 64)
+			if err != nil {
+				return Response{
+					Text: "syntax: duel [user] [points|all]",
+				}
+			}
+			if t == 0 {
+				return Response{
+					Text: "Must be more than 0 points",
+				}
+			}
+			if Points(t) > src.Balance() {
 				return Response{
 					Text: fmt.Sprintf(
 						"not enough points. your points: %d",
-						u.Points),
+						src.Balance()),
 				}
 			}
-			n = t
-		}
-		if n == 0 {
-			return Response{
-				Text: "Must be more than 0 points",
+			if Points(t) > dst.Balance() {
+				return Response{
+					Text: fmt.Sprintf(
+						"%s does not have enough points. %s points: %d",
+						s[0], s[0], dst.Balance()),
+				}
 			}
+			n = Points(t)
 		}
 		var t string
-		if rand.Int31n(2) == 1 {
-			n *= 2
-			u.Add(n)
-			t = fmt.Sprintf("You won %d points. New points %d",
-				n, u.Points)
+		if randBool() {
+			src.Add(n)
+			dst.Sub(n)
+			t = fmt.Sprintf("You took %d points. Your points: %d. %s points: %d",
+				n, src.Balance(), s[0], dst.Balance())
 		} else {
-			u.Sub(n)
-			t = fmt.Sprintf("You lost %d points. New points %d",
-				n, u.Points)
+			src.Sub(n)
+			dst.Add(n)
+			t = fmt.Sprintf("You lost %d points. Your points: %d. %s points: %d",
+				n, src.Balance(), s[0], dst.Balance())
 		}
 		return Response{
 			Text:   t,
@@ -316,40 +413,29 @@ func init() {
 	commandFuncs["pts"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: fmt.Sprintf("your points: %d", u.Points),
+				Text:   fmt.Sprintf("your points: %d", u.Points),
+				Charge: true,
 			}
 		}
-		us, err := getUserByName(rtm, text)
-		if err != nil {
-			log.Println("ERROR:", err.Error())
-			return Response{
-				Text: "internal error",
-			}
-		}
-		if us == nil {
+		src := getAccountByName(rtm, text)
+		if src == nil {
 			return Response{
 				Text: "user not found",
 			}
 		}
-		up := getCreateUser(us.ID)
 		return Response{
-			Text:   fmt.Sprintf("%s points: %d", us.Name, up.Points),
+			Text:   fmt.Sprintf("%s points: %d", text, src.Balance()),
 			Charge: true,
 		}
 	}
 	commandFuncs["lvl"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: fmt.Sprintf("your level: %d", u.Level),
+				Text:   fmt.Sprintf("your level: %d", u.Level),
+				Charge: true,
 			}
 		}
-		us, err := getUserByName(rtm, text)
-		if err != nil {
-			log.Println("ERROR:", err.Error())
-			return Response{
-				Text: "internal error",
-			}
-		}
+		us := getUserByName(rtm, text)
 		if us == nil {
 			return Response{
 				Text: "user not found",
@@ -364,16 +450,11 @@ func init() {
 	commandFuncs["id"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: fmt.Sprintf("your id: %s", u.ID),
+				Text:   fmt.Sprintf("your id: %s", u.ID),
+				Charge: true,
 			}
 		}
-		us, err := getUserByName(rtm, text)
-		if err != nil {
-			log.Println("ERROR:", err.Error())
-			return Response{
-				Text: "internal error",
-			}
-		}
+		us := getUserByName(rtm, text)
 		if us == nil {
 			return Response{
 				Text: "user not found",
@@ -409,11 +490,14 @@ func init() {
 		}
 	}
 	commandFuncs["coin"] = func(text string, u *User, rtm *slack.RTM) Response {
+		var t string
+		if randBool() {
+			t = "heads"
+		} else {
+			t = "tails"
+		}
 		return Response{
-			Text: []string{
-				"heads",
-				"tails",
-			}[rand.Int31n(2)],
+			Text:   t,
 			Charge: true,
 		}
 	}
@@ -474,7 +558,7 @@ func init() {
 				Charge: true,
 			}
 		}
-		t := c[rand.Int31n(int32(len(c)))]
+		t := c[randUint32(uint32(len(c)))]
 		return Response{
 			Text:   strings.TrimSpace(t),
 			Charge: true,
@@ -482,17 +566,61 @@ func init() {
 	}
 }
 
-func getUserByName(rtm *slack.RTM, name string) (*slack.User, error) {
+func getUserByName(rtm *slack.RTM, name string) *slack.User {
 	us, err := rtm.GetUsers()
 	if err != nil {
-		return nil, err
+		log.Println("ERROR:", err.Error())
+		return nil
 	}
 	for _, o := range us {
 		if o.Name == name {
-			return &o, nil
+			return &o
 		}
 	}
-	return nil, nil
+	return nil
+}
+
+func getAccountByName(rtm *slack.RTM, name string) Account {
+	if name == "bank" {
+		return &bank.Points
+	}
+	us := getUserByName(rtm, name)
+	if us == nil {
+		return nil
+	}
+	return &getCreateUser(us.ID).Points
+}
+
+func parsePoints(src Account, name, text string) (Points, string) {
+	var n Points
+	if text == "all" {
+		if src.Balance() == 0 {
+			if len(name) == 0 {
+				return 0, "you have no points"
+			} else {
+				return 0, fmt.Sprintf("%s got no points", name)
+			}
+		}
+		n = src.Balance()
+	} else {
+		t, err := strconv.ParseUint(text, 10, 64)
+		if err != nil || t == 0 {
+			return 0, "points have to be positive"
+		}
+		if src.Balance() < Points(t) {
+			if len(name) == 0 {
+				return 0, fmt.Sprintf(
+					"you do not have enough points. you have %d",
+					src.Balance())
+			} else {
+				return 0, fmt.Sprintf(
+					"%s does not have enough points. %s has %d",
+					name, name, src.Balance())
+			}
+		}
+		n = Points(t)
+	}
+	return n, ""
 }
 
 func getCreateUser(id string) *User {

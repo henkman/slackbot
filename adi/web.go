@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -93,7 +92,7 @@ func init() {
 				Text: "nothing found",
 			}
 		}
-		o := rand.Int31n(int32(len(ytr.Results)))
+		o := randUint32(uint32(len(ytr.Results)))
 		return Response{
 			Text:   "https://www.youtube.com/watch?v=" + ids[o],
 			Charge: true,
@@ -105,19 +104,13 @@ func init() {
 	commandFuncs["gif"] = func(text string, u *User, rtm *slack.RTM) Response {
 		return googleImage(text, true, google.ImageType_Animated)
 	}
-	commandFuncs["nsfwimg"] = func(text string, u *User, rtm *slack.RTM) Response {
-		return googleImage(text, false, google.ImageType_Any)
-	}
-	commandFuncs["nsfwgif"] = func(text string, u *User, rtm *slack.RTM) Response {
-		return googleImage(text, false, google.ImageType_Animated)
-	}
 	commandFuncs["bikpin"] = func(text string, u *User, rtm *slack.RTM) Response {
 		const N = 400
-		return duckduckgoImage("bikini+pineapple", uint(rand.Int31n(N)))
+		return duckduckgoImage("bikini+pineapple", uint(randUint32(N)))
 	}
 	commandFuncs["squirl"] = func(text string, u *User, rtm *slack.RTM) Response {
 		const N = 1000
-		return duckduckgoImage("squirrel+images", uint(rand.Int31n(N)))
+		return duckduckgoImage("squirrel+images", uint(randUint32(N)))
 	}
 	commandFuncs["rndimg"] = func(text string, u *User, rtm *slack.RTM) Response {
 		const N = 1000
@@ -127,7 +120,7 @@ func init() {
 					"gets random image from first %d search results", N),
 			}
 		}
-		return duckduckgoImage(text, uint(rand.Int31n(N)))
+		return duckduckgoImage(text, uint(randUint32(N)))
 	}
 	commandFuncs["mpoll"] = func(text string, u *User, rtm *slack.RTM) Response {
 		return poll(text, true)
@@ -285,7 +278,7 @@ func googleImage(text string, safe bool, typ google.ImageType) Response {
 			Text: "nothing found",
 		}
 	}
-	r := rand.Int31n(int32(len(images)))
+	r := randUint32(uint32(len(images)))
 	return Response{
 		Text:   images[r].URL,
 		Charge: true,
@@ -385,7 +378,7 @@ func duckduckgoImage(query string, offset uint) Response {
 			Text: "nothing found",
 		}
 	}
-	o := rand.Int31n(int32(len(ytr.Results)))
+	o := randUint32(uint32(len(ytr.Results)))
 	return Response{
 		Text:   ytr.Results[o].Image,
 		Charge: true,

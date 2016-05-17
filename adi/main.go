@@ -1,16 +1,18 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
+	"math/big"
 	"os"
 	"regexp"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/henkman/google"
@@ -25,10 +27,32 @@ type Response struct {
 
 type Level uint8
 
+type Points uint64
+
 type User struct {
 	ID     string `json:"id"`
 	Level  Level  `json:"level"`
-	Points uint64 `json:"points"`
+	Points Points `json:"points"`
+}
+
+type Bank struct {
+	Points  Points `json:"points"`
+	Lottery struct {
+		Access      sync.Mutex        `json:"-"`
+		Pot         Points            `json:"pot"`
+		LastDraw    time.Time         `json:"last_draw"`
+		DrawEvery   time.Duration     `json:"draw_every"`
+		TicketsSold uint64            `json:"tickets_sold"`
+		Tickets     map[string]uint64 `json:"tickets"`
+		BankInvest  uint64            `json:"bank_invest"`
+		TicketPrice Points            `json:"ticket_price"`
+	} `json:"lottery"`
+}
+
+type Account interface {
+	Add(Points)
+	Sub(Points)
+	Balance() Points
 }
 
 type CommandFunc func(text string, u *User, rtm *slack.RTM) Response
@@ -36,7 +60,7 @@ type CommandFunc func(text string, u *User, rtm *slack.RTM) Response
 type Command struct {
 	Name          string      `json:"name"`
 	RequiredLevel Level       `json:"required_level"`
-	Price         uint64      `json:"price"`
+	Price         Points      `json:"price"`
 	Func          CommandFunc `json:"-"`
 }
 
@@ -48,6 +72,7 @@ var (
 	defaultLevel   Level
 	cvm            *otto.Otto
 	gclient        google.Client
+	bank           Bank
 	users          []User
 	commands       []Command
 	commandFuncs   = map[string]CommandFunc{}
@@ -55,19 +80,21 @@ var (
 	helpString     string
 )
 
-func (u *User) Add(p uint64) {
-	if u.Points > (math.MaxUint64 - p) {
-		u.Points = math.MaxUint64
+func (u *Points) Balance() Points { return *u }
+
+func (u *Points) Add(p Points) {
+	if *u > (Points(math.MaxUint64) - p) {
+		*u = Points(math.MaxUint64)
 	} else {
-		u.Points += p
+		*u += Points(p)
 	}
 }
 
-func (u *User) Sub(p uint64) {
-	if u.Points < p {
-		u.Points = 0
+func (u *Points) Sub(p Points) {
+	if *u < p {
+		*u = 0
 	} else {
-		u.Points -= p
+		*u -= p
 	}
 }
 
@@ -78,6 +105,129 @@ func getCommandByName(name string) *Command {
 		}
 	}
 	return nil
+}
+
+func randBool() bool {
+	var bn big.Int
+	bn.SetUint64(2)
+	r, err := rand.Int(rand.Reader, &bn)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	return r.Uint64() == 1
+}
+
+func randUint64(n uint64) uint64 {
+	var bn big.Int
+	bn.SetUint64(n)
+	r, err := rand.Int(rand.Reader, &bn)
+	if err != nil {
+		log.Println(err)
+		return 0
+	}
+	return r.Uint64()
+}
+
+func randUint32(n uint32) uint32 {
+	var bn big.Int
+	bn.SetUint64(uint64(n))
+	r, err := rand.Int(rand.Reader, &bn)
+	if err != nil {
+		log.Println(err)
+		return 0
+	}
+	return uint32(r.Uint64())
+}
+
+func mulOverflows(a, b uint64) bool {
+	if a <= 1 || b <= 1 {
+		return false
+	}
+	c := a * b
+	return c/b != a
+}
+
+func getGeneralChat(rtm *slack.RTM) *slack.Channel {
+	cs, err := rtm.GetChannels(true)
+	if err != nil {
+		log.Fatal("ERROR:", err)
+		return nil
+	}
+	for _, c := range cs {
+		if c.IsGeneral {
+			return &c
+		}
+	}
+	return nil
+}
+
+func drawLottery(rtm *slack.RTM) {
+	lot := &bank.Lottery
+	nextDraw := lot.LastDraw.Add(bank.Lottery.DrawEvery).UTC()
+	if time.Now().UTC().Before(nextDraw) {
+		return
+	}
+	lot.Access.Lock()
+	defer lot.Access.Unlock()
+	if lot.TicketsSold == 0 {
+		lot.LastDraw = time.Now().UTC()
+		return
+	}
+	if len(lot.Tickets) >= 2 {
+		var o uint64
+		var i uint32
+		participants := make([]struct {
+			ID        string
+			Low, High uint64
+		}, len(lot.Tickets))
+		for p, n := range lot.Tickets {
+			participants[i].ID = p
+			participants[i].Low = o
+			participants[i].High = o + n - 1
+			o += n
+			i++
+		}
+		r := randUint64(o)
+		var w string
+		for _, p := range participants {
+			if r >= p.Low && r <= p.High {
+				w = p.ID
+				break
+			}
+		}
+		var dst Account
+		dst = &getCreateUser(w).Points
+		var name string
+		{
+			us, err := rtm.GetUserInfo(w)
+			if err != nil {
+				log.Println("ERROR:", err)
+				name = "somebody"
+			} else {
+				name = us.Name
+			}
+		}
+		m := fmt.Sprintf("%s won the lottery pot of %d points",
+			name,
+			lot.Pot,
+		)
+		log.Println(m)
+		cg := getGeneralChat(rtm)
+		if cg != nil {
+			rtm.SendMessage(rtm.NewOutgoingMessage(m, cg.ID))
+		}
+		dst.Add(lot.Pot)
+		lot.Pot = 0
+		lot.TicketsSold = 0
+		lot.Tickets = map[string]uint64{}
+	}
+	bi := Points(lot.BankInvest)
+	if bank.Points.Balance() > bi {
+		bank.Points.Sub(bi)
+		lot.Pot.Add(bi)
+	}
+	lot.LastDraw = time.Now().UTC()
 }
 
 func main() {
@@ -118,36 +268,47 @@ func main() {
 		defaultLevel = config.DefaultLevel
 	}
 	{
-		fd, err := os.OpenFile("./commands.json", os.O_RDONLY, 0750)
-		if err != nil {
-			log.Panicln(err)
+		readDump := func(file string, item interface{}) {
+			fd, err := os.OpenFile(file, os.O_RDONLY, 0750)
+			if err != nil {
+				log.Panicln(err)
+			}
+			if err := json.NewDecoder(fd).Decode(item); err != nil {
+				fd.Close()
+				log.Panicln(err)
+			}
+			fd.Close()
 		}
 		commands = make([]Command, 0, 10)
-		if err := json.NewDecoder(fd).Decode(&commands); err != nil {
-			fd.Close()
-			log.Panicln(err)
-		}
-		fd.Close()
-		commandStrings := make([]string, 0, len(commands))
+		readDump("./commands.json", &commands)
+		users = make([]User, 0, 10)
+		readDump("./users.json", &users)
+		readDump("./bank.json", &bank)
+	}
+	{
+		commandStrings = make([]string, len(commands))
 		for i, _ := range commands {
 			name := commands[i].Name
-			commands[i].Func = commandFuncs[name]
-			commandStrings = append(commandStrings, name)
+			f, ok := commandFuncs[name]
+			if ok {
+				commands[i].Func = f
+			} else {
+				commands[i].Func = func(text string, u *User, rtm *slack.RTM) Response {
+					return Response{
+						Text: "not implemented",
+					}
+				}
+			}
+			commandStrings[i] = name
 		}
 		sort.Sort(sort.StringSlice(commandStrings))
 		helpString = strings.Join(commandStrings, ", ")
 	}
 	{
-		fd, err := os.OpenFile("./users.json", os.O_RDONLY, 0750)
-		if err != nil {
-			log.Panicln(err)
-		}
-		users = make([]User, 0, 10)
-		if err := json.NewDecoder(fd).Decode(&users); err != nil {
-			fd.Close()
-			log.Panicln(err)
-		}
-		fd.Close()
+		fmt.Println(users)
+		fmt.Println(commands)
+		fmt.Println(bank)
+		// return
 	}
 	{
 		if err := gclient.Init(TLD); err != nil {
@@ -159,7 +320,6 @@ func main() {
 		reCommand *regexp.Regexp
 	)
 	tick := time.NewTicker(time.Minute)
-	rand.Seed(time.Now().UnixNano())
 	api := slack.New(key)
 	api.SetDebug(false)
 	rtm := api.NewRTM()
@@ -225,7 +385,8 @@ Loop:
 					rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
 				}
 				if cmd.Price > 0 && r.Charge {
-					u.Sub(cmd.Price)
+					u.Points.Sub(cmd.Price)
+					bank.Points.Add(cmd.Price)
 				}
 			case *slack.PresenceChangeEvent:
 			case *slack.LatencyReport:
@@ -238,49 +399,42 @@ Loop:
 			}
 		case <-tick.C:
 			{
+				drawLottery(rtm)
 				{
 					us, _ := rtm.GetUsers()
 					for _, o := range us {
-						if o.IsBot ||
+						if bank.Points == 0 ||
+							o.IsBot ||
 							o.ID == "USLACKBOT" ||
 							o.Presence != "active" {
 							continue
 						}
 						for i, _ := range users {
 							if users[i].ID == o.ID {
-								users[i].Add(1)
+								users[i].Points.Add(1)
+								bank.Points.Sub(1)
+								break
 							}
 						}
 					}
 				}
-				{
-					fd, err := os.OpenFile("./users.json",
+				writeDump := func(file string, item interface{}) {
+					fd, err := os.OpenFile(file,
 						os.O_WRONLY|os.O_TRUNC, 0750)
 					if err != nil {
 						log.Println(err)
-						continue Loop
+						return
 					}
-					if err := json.NewEncoder(fd).Encode(users); err != nil {
+					if err := json.NewEncoder(fd).Encode(item); err != nil {
 						fd.Close()
 						log.Println(err)
-						continue Loop
+						return
 					}
 					fd.Close()
 				}
-				{
-					fd, err := os.OpenFile("./commands.json",
-						os.O_WRONLY|os.O_TRUNC, 0750)
-					if err != nil {
-						log.Println(err)
-						continue Loop
-					}
-					if err := json.NewEncoder(fd).Encode(commands); err != nil {
-						fd.Close()
-						log.Println(err)
-						continue Loop
-					}
-					fd.Close()
-				}
+				writeDump("./users.json", users)
+				writeDump("./commands.json", commands)
+				writeDump("./bank.json", bank)
 			}
 		}
 	}
