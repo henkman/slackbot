@@ -25,8 +25,6 @@ func (a UsersByRank) Less(i, j int) bool { return a[i].Points > a[j].Points }
 func init() {
 	commandFuncs["lottery"] = func(text string, u *User, rtm *slack.RTM) Response {
 		lot := &bank.Lottery
-		lot.Access.Lock()
-		defer lot.Access.Unlock()
 		if text == "" {
 			return Response{
 				Text: fmt.Sprintf(
@@ -40,43 +38,67 @@ func init() {
 		}
 		if text == "help" {
 			return Response{
-				Text: `The lottery is drawn periodically. Users can buy multiple tickets.
-One of the sold tickets is chosen as winner and gets the whole pot.
-If a drawing comes up and only one user bought tickets:
+				Text: `the lottery is drawn periodically. users can buy multiple tickets.
+one of the sold tickets is chosen as winner and gets the whole pot.
+if a drawing comes up and only one user bought tickets:
 	- bought ticket(s) stay in the game
 	- bank pays a small sum into the pot if it has the cash
-use 'lottery enter [number of tickets]' to buy tickets`,
+use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			}
 		}
-		s := strings.Split(text, " ")
-		if len(s) != 2 || s[0] != "enter" {
+		if text == "info" {
+			if lot.TicketsSold == 0 {
+				return Response{
+					Text: "no one has bought a ticket",
+				}
+			}
+			var t string
+			ts, ok := lot.Tickets[u.ID]
+			if ok {
+				t = fmt.Sprintf(
+					"you have %d tickets. %d other users bought %d tickets",
+					ts, len(lot.Tickets)-1, lot.TicketsSold-ts)
+			} else {
+				t = fmt.Sprintf(
+					"you did not buy tickets. %d other users bought %d tickets",
+					len(lot.Tickets), lot.TicketsSold)
+			}
 			return Response{
-				Text: "syntax: lottery enter [number of tickets]",
+				Text: t,
 			}
 		}
+		var src Account = &u.Points
 		var n uint64
 		{
-			t, err := strconv.ParseUint(s[1], 10, 64)
-			if err != nil {
-				return Response{
-					Text: "syntax: lottery enter [number of tickets]",
+			if text == "all" {
+				if src.Balance() < lot.TicketPrice {
+					return Response{
+						Text: "you do not have enough points.",
+					}
 				}
-			}
-			if t == 0 {
-				return Response{
-					Text: "Needs to be at least 1",
+				n = uint64(src.Balance() / lot.TicketPrice)
+			} else {
+				t, err := strconv.ParseUint(text, 10, 64)
+				if err != nil {
+					return Response{
+						Text: "syntax: lottery [tickets|all]",
+					}
 				}
-			}
-			if mulOverflows(uint64(lot.TicketPrice), t) ||
-				lot.TicketsSold > (math.MaxUint64-t) {
-				return Response{
-					Text: "can't buy that much tickets",
+				if t == 0 {
+					return Response{
+						Text: "needs to be at least 1",
+					}
 				}
+				if mulOverflows(uint64(lot.TicketPrice), t) ||
+					lot.TicketsSold > (math.MaxUint64-t) {
+					return Response{
+						Text: "can't buy that much tickets",
+					}
+				}
+				n = t
 			}
-			n = t
 		}
 		p := lot.TicketPrice * Points(n)
-		var src Account = &u.Points
 		if p > src.Balance() {
 			return Response{
 				Text: "you do not have enough points.",
@@ -97,8 +119,8 @@ use 'lottery enter [number of tickets]' to buy tickets`,
 		src.Sub(p)
 		lot.Pot.Add(p)
 		return Response{
-			Text: fmt.Sprintf("you bought %d tickets for %d. pot: %d",
-				n, p, lot.Pot.Balance(),
+			Text: fmt.Sprintf("you bought %d tickets for %d. your points:%d. pot: %d",
+				n, p, src.Balance(), lot.Pot.Balance(),
 			),
 			Charge: true,
 		}
@@ -397,12 +419,12 @@ use 'lottery enter [number of tickets]' to buy tickets`,
 		if randBool() {
 			src.Add(n)
 			dst.Sub(n)
-			t = fmt.Sprintf("You took %d points. Your points: %d. %s points: %d",
+			t = fmt.Sprintf("you took %d points. your points: %d. %s points: %d",
 				n, src.Balance(), s[0], dst.Balance())
 		} else {
 			src.Sub(n)
 			dst.Add(n)
-			t = fmt.Sprintf("You lost %d points. Your points: %d. %s points: %d",
+			t = fmt.Sprintf("you lost %d points. your points: %d. %s points: %d",
 				n, src.Balance(), s[0], dst.Balance())
 		}
 		return Response{
@@ -468,7 +490,7 @@ use 'lottery enter [number of tickets]' to buy tickets`,
 	commandFuncs["calc"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: `A Calculator
+				Text: `a calculator
 	Usage:
 	  Operators: +, -, *, /, ^, %%
 	  Functions: sin, cos, tan, cot, sec, csc,
@@ -504,7 +526,7 @@ use 'lottery enter [number of tickets]' to buy tickets`,
 	commandFuncs["js"] = func(text string, u *User, rtm *slack.RTM) (r Response) {
 		if text == "" {
 			return Response{
-				Text: "interactive javascript console\nType reload to reload the VM",
+				Text: "interactive javascript console. type reload to reload the VM",
 			}
 		}
 		if text == "reload" {

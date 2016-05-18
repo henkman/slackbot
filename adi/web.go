@@ -18,7 +18,7 @@ func init() {
 	commandFuncs["web"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "Finds stuff in the internet",
+				Text: "finds stuff in the internet",
 			}
 		}
 		results, err := gclient.Search(TLD, text, "en", false, 5)
@@ -288,15 +288,15 @@ func googleImage(text string, safe bool, typ google.ImageType) Response {
 func poll(text string, multi bool) Response {
 	if text == "" {
 		return Response{
-			Text: `Creates a poll
+			Text: `creates a poll
 Example: poll animal?, dog, cat, hamster
--> Creates a poll with title animal? and the three animals as choices`,
+-> creates a poll with title animal? and the three animals as choices`,
 		}
 	}
 	s := strings.Split(text, ",")
 	if len(s) < 3 {
 		return Response{
-			Text: "Needs one question and at least 2 options",
+			Text: "needs one question and at least 2 options",
 		}
 	}
 	preq := struct {

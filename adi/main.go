@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/henkman/google"
@@ -38,13 +37,12 @@ type User struct {
 type Bank struct {
 	Points  Points `json:"points"`
 	Lottery struct {
-		Access      sync.Mutex        `json:"-"`
 		Pot         Points            `json:"pot"`
 		LastDraw    time.Time         `json:"last_draw"`
 		DrawEvery   time.Duration     `json:"draw_every"`
 		TicketsSold uint64            `json:"tickets_sold"`
 		Tickets     map[string]uint64 `json:"tickets"`
-		BankInvest  uint64            `json:"bank_invest"`
+		BankInvest  Points            `json:"bank_invest"`
 		TicketPrice Points            `json:"ticket_price"`
 	} `json:"lottery"`
 }
@@ -168,8 +166,6 @@ func drawLottery(rtm *slack.RTM) {
 	if time.Now().UTC().Before(nextDraw) {
 		return
 	}
-	lot.Access.Lock()
-	defer lot.Access.Unlock()
 	if lot.TicketsSold == 0 {
 		lot.LastDraw = time.Now().UTC()
 		return
@@ -222,7 +218,7 @@ func drawLottery(rtm *slack.RTM) {
 		lot.TicketsSold = 0
 		lot.Tickets = map[string]uint64{}
 	}
-	bi := Points(lot.BankInvest)
+	bi := lot.BankInvest
 	if bank.Points.Balance() > bi {
 		bank.Points.Sub(bi)
 		lot.Pot.Add(bi)
@@ -303,12 +299,6 @@ func main() {
 		}
 		sort.Sort(sort.StringSlice(commandStrings))
 		helpString = strings.Join(commandStrings, ", ")
-	}
-	{
-		fmt.Println(users)
-		fmt.Println(commands)
-		fmt.Println(bank)
-		// return
 	}
 	{
 		if err := gclient.Init(TLD); err != nil {
@@ -393,7 +383,7 @@ Loop:
 			case *slack.RTMError:
 				log.Printf("Error: %s\n", ev.Error())
 			case *slack.InvalidAuthEvent:
-				log.Println("Invalid credentials")
+				log.Println("invalid credentials")
 				break Loop
 			default:
 			}
@@ -409,13 +399,9 @@ Loop:
 							o.Presence != "active" {
 							continue
 						}
-						for i, _ := range users {
-							if users[i].ID == o.ID {
-								users[i].Points.Add(1)
-								bank.Points.Sub(1)
-								break
-							}
-						}
+						uo := getCreateUser(o.ID)
+						bank.Points.Sub(1)
+						uo.Points.Add(1)
 					}
 				}
 				writeDump := func(file string, item interface{}) {
