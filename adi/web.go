@@ -101,8 +101,14 @@ func init() {
 	commandFuncs["img"] = func(text string, u *User, rtm *slack.RTM) Response {
 		return googleImage(text, true, google.ImageType_Any)
 	}
+	commandFuncs["nsfwimg"] = func(text string, u *User, rtm *slack.RTM) Response {
+		return googleImage(text, false, google.ImageType_Any)
+	}
 	commandFuncs["gif"] = func(text string, u *User, rtm *slack.RTM) Response {
 		return googleImage(text, true, google.ImageType_Animated)
+	}
+	commandFuncs["nsfwgif"] = func(text string, u *User, rtm *slack.RTM) Response {
+		return googleImage(text, false, google.ImageType_Animated)
 	}
 	commandFuncs["bikpin"] = func(text string, u *User, rtm *slack.RTM) Response {
 		const N = 400

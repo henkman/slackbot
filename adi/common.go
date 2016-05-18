@@ -162,7 +162,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		s := strings.Split(text, " ")
 		if len(s) != 3 {
 			return Response{
-				Text: "syntax: trpts [user|bank] [user|bank] [points|all]",
+				Text: "syntax: trpts [src] [dst] [points|all]",
 			}
 		}
 		src := getAccountByName(rtm, s[0])
@@ -315,7 +315,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		s := strings.Split(text, " ")
 		if len(s) != 2 {
 			return Response{
-				Text: "syntax: givepoints [user] [points|all]",
+				Text: "syntax: givepts [user] [points|all]",
 			}
 		}
 		var src, dst Account
@@ -355,6 +355,11 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		if len(s) != 2 {
 			return Response{
 				Text: "syntax: duel [user] [points|all]",
+			}
+		}
+		if s[0] == "pot" {
+			return Response{
+				Text: fmt.Sprintf("can't duel %s", s[0]),
 			}
 		}
 		var src, dst Account
@@ -605,6 +610,9 @@ func getUserByName(rtm *slack.RTM, name string) *slack.User {
 func getAccountByName(rtm *slack.RTM, name string) Account {
 	if name == "bank" {
 		return &bank.Points
+	}
+	if name == "pot" {
+		return &bank.Lottery.Pot
 	}
 	us := getUserByName(rtm, name)
 	if us == nil {

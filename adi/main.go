@@ -59,6 +59,7 @@ type Command struct {
 	Name          string      `json:"name"`
 	RequiredLevel Level       `json:"required_level"`
 	Price         Points      `json:"price"`
+	Visible       bool        `json:"visible"`
 	Func          CommandFunc `json:"-"`
 }
 
@@ -67,15 +68,14 @@ const (
 )
 
 var (
-	defaultLevel   Level
-	cvm            *otto.Otto
-	gclient        google.Client
-	bank           Bank
-	users          []User
-	commands       []Command
-	commandFuncs   = map[string]CommandFunc{}
-	commandStrings []string
-	helpString     string
+	defaultLevel Level
+	cvm          *otto.Otto
+	gclient      google.Client
+	bank         Bank
+	users        []User
+	commands     []Command
+	commandFuncs = map[string]CommandFunc{}
+	helpString   string
 )
 
 func (u *Points) Balance() Points { return *u }
@@ -281,8 +281,10 @@ func main() {
 		readDump("./users.json", &users)
 		readDump("./bank.json", &bank)
 	}
+	var reCommand *regexp.Regexp
 	{
-		commandStrings = make([]string, len(commands))
+		visibleCmds := make([]string, 0, len(commands))
+		commandStrings := make([]string, len(commands))
 		for i, _ := range commands {
 			name := commands[i].Name
 			f, ok := commandFuncs[name]
@@ -296,19 +298,22 @@ func main() {
 				}
 			}
 			commandStrings[i] = name
+			if commands[i].Visible {
+				visibleCmds = append(visibleCmds, name)
+			}
 		}
-		sort.Sort(sort.StringSlice(commandStrings))
-		helpString = strings.Join(commandStrings, ", ")
+		sort.Sort(sort.StringSlice(visibleCmds))
+		helpString = strings.Join(visibleCmds, ", ")
+		reCommand = regexp.MustCompile(
+			fmt.Sprintf("(?s)^(%s)(?:\\s+(.+))?\\s*$",
+				strings.Join(commandStrings, "|")))
 	}
 	{
 		if err := gclient.Init(TLD); err != nil {
 			log.Panicln(err)
 		}
 	}
-	var (
-		reToMe    *regexp.Regexp
-		reCommand *regexp.Regexp
-	)
+	var reToMe *regexp.Regexp
 	tick := time.NewTicker(time.Minute)
 	api := slack.New(key)
 	api.SetDebug(false)
@@ -329,9 +334,6 @@ Loop:
 					reToMe = regexp.MustCompile(fmt.Sprintf("^<@%s>\\s*",
 						rtm.GetInfo().User.ID))
 				}
-				reCommand = regexp.MustCompile(
-					fmt.Sprintf("(?s)^(%s)(?:\\s+(.+))?\\s*$",
-						strings.Join(commandStrings, "|")))
 			case *slack.MessageEvent:
 				{
 					m := reToMe.FindStringSubmatch(ev.Text)
