@@ -392,7 +392,7 @@ Loop:
 		case <-tick.C:
 			{
 				drawLottery(rtm)
-				{
+				{ // salary
 					us, _ := rtm.GetUsers()
 					for _, o := range us {
 						if bank.Points == 0 ||

@@ -153,6 +153,43 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			Charge: true,
 		}
 	}
+	commandFuncs["botdel"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "deletes the last N messages this bot made",
+			}
+		}
+		n, err := strconv.ParseUint(text, 10, 8)
+		if err != nil {
+			return Response{
+				Text: "syntax: del [count]",
+			}
+		}
+		ch := getGeneralChat(rtm)
+		h, err := rtm.GetChannelHistory(ch.ID, slack.NewHistoryParameters())
+		if err != nil {
+			log.Println("ERROR:", err.Error())
+			return Response{
+				Text: "internal error",
+			}
+		}
+		id := rtm.GetInfo().User.ID
+		for _, m := range h.Messages {
+			if m.User == id {
+				_, _, err := rtm.DeleteMessage(ch.ID, m.Timestamp)
+				if err != nil {
+					log.Println("delete error:", err)
+				}
+				n--
+			}
+			if n == 0 {
+				break
+			}
+		}
+		return Response{
+			Charge: true,
+		}
+	}
 	commandFuncs["trpts"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
