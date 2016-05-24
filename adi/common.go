@@ -125,6 +125,63 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			Charge: true,
 		}
 	}
+	commandFuncs["settxt"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "sets a text command",
+			}
+		}
+		s := strings.Split(text, " ")
+		if len(s) < 2 {
+			return Response{
+				Text: "syntax: settxt [name] [text]",
+			}
+		}
+		n := s[0]
+		t := strings.Trim(strings.Join(s[1:], " "), "<>")
+		c := getCommandByName(n)
+		if c == nil {
+			commands = append(commands, Command{
+				Name:          n,
+				Text:          t,
+				RequiredLevel: defaultLevel,
+				Price:         0,
+				Visible:       false,
+			})
+			resetCommands()
+		} else {
+			c.Text = t
+		}
+		return Response{
+			Text:   fmt.Sprintf("set %s to \"%s\"", n, t),
+			Charge: true,
+		}
+	}
+	commandFuncs["deltxt"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "deletes a text command",
+			}
+		}
+		o := -1
+		for i, _ := range commands {
+			if commands[i].Text != "" && commands[i].Name == text {
+				o = i
+				break
+			}
+		}
+		if o == -1 {
+			return Response{
+				Text: "command does not exist",
+			}
+		}
+		commands = append(commands[:o], commands[o+1:]...)
+		resetCommands()
+		return Response{
+			Text:   fmt.Sprintf("%s deleted", text),
+			Charge: true,
+		}
+	}
 	commandFuncs["rank"] = func(text string, u *User, rtm *slack.RTM) Response {
 		us := make([]User, len(users))
 		copy(us, users)
@@ -240,6 +297,30 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		}
 		return Response{
 			Text:   fmt.Sprintf("%s costs %d", text, cmd.Price),
+			Charge: true,
+		}
+	}
+	commandFuncs["setvis"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "set visiblity of a command",
+			}
+		}
+		s := strings.Split(text, " ")
+		if len(s) != 2 {
+			return Response{
+				Text: "syntax: setvis [command] [visible|hidden]",
+			}
+		}
+		cmd := getCommandByName(s[0])
+		if cmd == nil {
+			return Response{
+				Text: "command not found",
+			}
+		}
+		cmd.Visible = s[1] == "visible"
+		return Response{
+			Text:   fmt.Sprintf("%s now costs %d", cmd.Name, cmd.Price),
 			Charge: true,
 		}
 	}

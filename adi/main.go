@@ -61,6 +61,7 @@ type Command struct {
 	Price         Points      `json:"price"`
 	Visible       bool        `json:"visible"`
 	Func          CommandFunc `json:"-"`
+	Text          string      `json:"text,omitempty"`
 }
 
 const (
@@ -71,6 +72,7 @@ var (
 	defaultLevel Level
 	cvm          *otto.Otto
 	gclient      google.Client
+	reCommand    *regexp.Regexp
 	bank         Bank
 	users        []User
 	commands     []Command
@@ -226,6 +228,16 @@ func drawLottery(rtm *slack.RTM) {
 	lot.LastDraw = time.Now().UTC()
 }
 
+func resetCommands() {
+	commandStrings := make([]string, len(commands))
+	for i, _ := range commands {
+		commandStrings[i] = commands[i].Name
+	}
+	reCommand = regexp.MustCompile(
+		fmt.Sprintf("(?s)^(%s)(?:\\s+(.+))?\\s*$",
+			strings.Join(commandStrings, "|")))
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	{
@@ -281,7 +293,6 @@ func main() {
 		readDump("./users.json", &users)
 		readDump("./bank.json", &bank)
 	}
-	var reCommand *regexp.Regexp
 	{
 		visibleCmds := make([]string, 0, len(commands))
 		commandStrings := make([]string, len(commands))
@@ -290,12 +301,6 @@ func main() {
 			f, ok := commandFuncs[name]
 			if ok {
 				commands[i].Func = f
-			} else {
-				commands[i].Func = func(text string, u *User, rtm *slack.RTM) Response {
-					return Response{
-						Text: "not implemented",
-					}
-				}
 			}
 			commandStrings[i] = name
 			if commands[i].Visible {
@@ -372,7 +377,15 @@ Loop:
 						ev.Channel))
 					continue Loop
 				}
-				r := cmd.Func(m[2], u, rtm)
+				var r Response
+				if cmd.Func != nil {
+					r = cmd.Func(m[2], u, rtm)
+				} else if cmd.Text != "" {
+					r = Response{
+						Text:   cmd.Text,
+						Charge: true,
+					}
+				}
 				if r.Text != "" {
 					rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
 				}
