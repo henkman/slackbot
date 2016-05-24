@@ -210,8 +210,7 @@ func init() {
 			}
 		}
 		return Response{
-			Text:   img,
-			Charge: true,
+			Text: img,
 		}
 	}
 	commandFuncs["insult"] = func(text string, u *User, rtm *slack.RTM) Response {
