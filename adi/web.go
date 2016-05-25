@@ -78,6 +78,13 @@ func init() {
 			t = fmt.Sprintf("Currently playing nothing. %d are listening",
 				d.ActiveUsers)
 		} else {
+			n, err := url.QueryUnescape(d.CurrentSong.Name)
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
 			t = fmt.Sprintf("Currently playing \"%s\". %d are listening",
 				d.CurrentSong.Name, d.ActiveUsers)
 		}
