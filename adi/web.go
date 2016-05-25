@@ -42,6 +42,50 @@ func init() {
 			Charge: true,
 		}
 	}
+	commandFuncs["song"] = func(text string, u *User, rtm *slack.RTM) Response {
+		var r *http.Response
+		{
+			var err error
+			r, err = http.Get(fmt.Sprintf(
+				"https://api.dubtrack.fm/room/%s",
+				dubtrackRoom))
+			if err != nil {
+				log.Println("ERROR:", err)
+				return Response{
+					Text: "internal error",
+				}
+			}
+		}
+		var room struct {
+			Data struct {
+				ActiveUsers int `json:"activeUsers"`
+				CurrentSong *struct {
+					Name string `json:"name"`
+				} `json:"currentSong"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&room); err != nil {
+			r.Body.Close()
+			log.Println("ERROR:", err)
+			return Response{
+				Text: "internal error",
+			}
+		}
+		r.Body.Close()
+		var t string
+		d := room.Data
+		if d.CurrentSong == nil {
+			t = fmt.Sprintf("Currently playing nothing. %d are listening",
+				d.ActiveUsers)
+		} else {
+			t = fmt.Sprintf("Currently playing \"%s\". %d are listening",
+				d.CurrentSong.Name, d.ActiveUsers)
+		}
+		return Response{
+			Text:   t,
+			Charge: true,
+		}
+	}
 	commandFuncs["vid"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{

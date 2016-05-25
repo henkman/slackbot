@@ -69,6 +69,7 @@ const (
 )
 
 var (
+	dubtrackRoom string
 	defaultLevel Level
 	cvm          *otto.Otto
 	gclient      google.Client
@@ -260,6 +261,7 @@ func main() {
 			ShortCommands    bool   `json:"short_commands"`
 			ShortCommandSign string `json:"short_command_sign"`
 			DefaultLevel     Level  `json:"default_level"`
+			DubtrackRoom     string `json:"dubtrack_room"`
 		}
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0750)
 		if err != nil {
@@ -274,6 +276,7 @@ func main() {
 		shortCommands = config.ShortCommands
 		shortCommandSign = config.ShortCommandSign
 		defaultLevel = config.DefaultLevel
+		dubtrackRoom = config.DubtrackRoom
 	}
 	{
 		readDump := func(file string, item interface{}) {
