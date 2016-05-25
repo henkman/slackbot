@@ -285,8 +285,15 @@ func googleImage(text string, safe bool, typ google.ImageType) Response {
 		}
 	}
 	r := randUint32(uint32(len(images)))
+	u, err := url.QueryUnescape(images[r].URL)
+	if err != nil {
+		log.Println("ERROR:", err)
+		return Response{
+			Text: "internal error",
+		}
+	}
 	return Response{
-		Text:   images[r].URL,
+		Text:   u,
 		Charge: true,
 	}
 }
