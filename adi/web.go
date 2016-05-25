@@ -86,7 +86,7 @@ func init() {
 				}
 			}
 			t = fmt.Sprintf("Currently playing \"%s\". %d are listening",
-				d.CurrentSong.Name, d.ActiveUsers)
+				n, d.ActiveUsers)
 		}
 		return Response{
 			Text:   t,

@@ -125,16 +125,27 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			Charge: true,
 		}
 	}
-	commandFuncs["settxt"] = func(text string, u *User, rtm *slack.RTM) Response {
+	commandFuncs["say"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "sets a text command",
+				Text: "says something",
+			}
+		}
+		return Response{
+			Text:   text,
+			Charge: true,
+		}
+	}
+	commandFuncs["setproxy"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "sets a proxy command",
 			}
 		}
 		s := strings.Split(text, " ")
 		if len(s) < 2 {
 			return Response{
-				Text: "syntax: settxt [name] [text]",
+				Text: "syntax: setproxy [name] [cmd]",
 			}
 		}
 		n := s[0]
@@ -143,29 +154,34 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		if c == nil {
 			commands = append(commands, Command{
 				Name:          n,
-				Text:          t,
+				Proxy:         t,
 				RequiredLevel: defaultLevel,
 				Price:         0,
 				Visible:       false,
 			})
 			resetCommands()
 		} else {
-			c.Text = t
+			if c.Func != nil {
+				return Response{
+					Text: fmt.Sprintf("%s is not a proxy command", s[0]),
+				}
+			}
+			c.Proxy = t
 		}
 		return Response{
 			Text:   fmt.Sprintf("set %s to \"%s\"", n, t),
 			Charge: true,
 		}
 	}
-	commandFuncs["deltxt"] = func(text string, u *User, rtm *slack.RTM) Response {
+	commandFuncs["delproxy"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
-				Text: "deletes a text command",
+				Text: "deletes a proxy command",
 			}
 		}
 		o := -1
 		for i, _ := range commands {
-			if commands[i].Text != "" && commands[i].Name == text {
+			if commands[i].Proxy != "" && commands[i].Name == text {
 				o = i
 				break
 			}
