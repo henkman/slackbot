@@ -149,7 +149,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			}
 		}
 		n := s[0]
-		t := strings.Trim(strings.Join(s[1:], " "), "<>")
+		t := urlUnFurl(strings.Join(s[1:], " "))
 		c := getCommandByName(n)
 		if c == nil {
 			commands = append(commands, Command{
@@ -296,6 +296,24 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 		return Response{
 			Text: fmt.Sprintf("%s level is now %d",
 				us.Name, up.Level),
+			Charge: true,
+		}
+	}
+	commandFuncs["rqlvl"] = func(text string, u *User, rtm *slack.RTM) Response {
+		if text == "" {
+			return Response{
+				Text: "find out the required level of a command",
+			}
+		}
+		cmd := getCommandByName(text)
+		if cmd == nil {
+			return Response{
+				Text: "command not found",
+			}
+		}
+		return Response{
+			Text: fmt.Sprintf(
+				"%s requires level %d", text, cmd.RequiredLevel),
 			Charge: true,
 		}
 	}

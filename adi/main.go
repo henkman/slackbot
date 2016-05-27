@@ -80,6 +80,8 @@ var (
 	commands     []Command
 	commandFuncs = map[string]CommandFunc{}
 	helpString   string
+	reUrlUnFurl  = regexp.MustCompile(
+		"<((?:https?|ftp)://[^|>]+)(?:|[^>]+)?>")
 )
 
 func (u *Points) Balance() Points { return *u }
@@ -240,7 +242,7 @@ func resetCommands() {
 			strings.Join(commandStrings, "|")))
 }
 
-func parseCommand(text string, u *User) (*Command, string, error) {
+func parseCommand(text string) (*Command, string, error) {
 	m := reCommand.FindStringSubmatch(text)
 	if m == nil {
 		return nil, "", errors.New("commands: " + helpString)
@@ -249,17 +251,23 @@ func parseCommand(text string, u *User) (*Command, string, error) {
 	if cmd == nil {
 		return nil, "", errors.New("commands: " + helpString)
 	}
-	if u.Level < cmd.RequiredLevel {
-		return nil, "", errors.New(fmt.Sprintf(
-			"unprivileged. your level: %d. required: %d",
-			u.Level, cmd.RequiredLevel))
-	}
-	if cmd.Price > u.Points {
-		return nil, "", errors.New(fmt.Sprintf(
-			"not enough points. your points: %d. required: %d",
-			u.Points, cmd.Price))
-	}
 	return cmd, m[2], nil
+}
+
+func urlUnFurl(furl string) string {
+	b := []byte(furl)
+	for {
+		m := reUrlUnFurl.FindSubmatchIndex(b)
+		if m == nil {
+			break
+		}
+		d := (m[1] - m[0]) - (m[3] - m[2])
+		l := len(b) - d
+		copy(b[m[0]:], b[m[2]:m[3]])
+		copy(b[m[3]-1:l], b[m[1]:])
+		b = b[:l]
+	}
+	return string(b)
 }
 
 func main() {
@@ -374,11 +382,25 @@ Loop:
 					ev.Text = ev.Text[len(m[0]):]
 				}
 				log.Println(ev.User, ev.Text)
-				u := getCreateUser(ev.User)
-				cmd, params, err := parseCommand(ev.Text, u)
+				cmd, params, err := parseCommand(ev.Text)
 				if err != nil {
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						err.Error(), ev.Channel))
+					continue Loop
+				}
+				u := getCreateUser(ev.User)
+				if u.Level < cmd.RequiredLevel {
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						fmt.Sprintf(
+							"unprivileged. your level: %d. required: %d",
+							u.Level, cmd.RequiredLevel), ev.Channel))
+					continue Loop
+				}
+				if cmd.Price > u.Points {
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						fmt.Sprintf(
+							"not enough points. your points: %d. required: %d",
+							u.Points, cmd.Price), ev.Channel))
 					continue Loop
 				}
 				var r Response
@@ -389,14 +411,16 @@ Loop:
 					} else {
 						nc = cmd.Proxy
 					}
-					cmd, params, err = parseCommand(nc, u)
+					cmd, params, err := parseCommand(nc)
 					if err != nil {
 						rtm.SendMessage(rtm.NewOutgoingMessage(
 							err.Error(), ev.Channel))
 						continue Loop
 					}
+					r = cmd.Func(params, u, rtm)
+				} else {
+					r = cmd.Func(params, u, rtm)
 				}
-				r = cmd.Func(params, u, rtm)
 				if r.Text != "" {
 					rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
 				}
