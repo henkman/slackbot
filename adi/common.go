@@ -132,6 +132,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 				hidden = append(hidden, c.Name)
 			}
 		}
+		sort.Sort(sort.StringSlice(hidden))
 		return Response{
 			Text:   strings.Join(hidden, ", "),
 			Charge: true,
