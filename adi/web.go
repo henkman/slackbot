@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -78,13 +79,7 @@ func init() {
 			t = fmt.Sprintf("Currently playing nothing. %d are listening",
 				d.ActiveUsers)
 		} else {
-			n, err := url.QueryUnescape(d.CurrentSong.Name)
-			if err != nil {
-				log.Println("ERROR:", err)
-				return Response{
-					Text: "internal error",
-				}
-			}
+			n := html.UnescapeString(d.CurrentSong.Name)
 			t = fmt.Sprintf("Currently playing \"%s\". %d are listening",
 				n, d.ActiveUsers)
 		}

@@ -125,6 +125,18 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			Charge: true,
 		}
 	}
+	commandFuncs["hidden"] = func(text string, u *User, rtm *slack.RTM) Response {
+		hidden := make([]string, 0, len(commands))
+		for _, c := range commands {
+			if !c.Visible {
+				hidden = append(hidden, c.Name)
+			}
+		}
+		return Response{
+			Text:   strings.Join(hidden, ", "),
+			Charge: true,
+		}
+	}
 	commandFuncs["say"] = func(text string, u *User, rtm *slack.RTM) Response {
 		if text == "" {
 			return Response{
@@ -353,6 +365,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 			}
 		}
 		cmd.Visible = s[1] == "visible"
+		resetCommands()
 		return Response{
 			Text:   fmt.Sprintf("%s now costs %d", cmd.Name, cmd.Price),
 			Charge: true,
