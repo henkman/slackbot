@@ -16,8 +16,8 @@ const (
 )
 
 var (
-	gclient    google.Client
-	initalized bool
+	gclient     google.Client
+	initialized bool
 )
 
 func init() {
@@ -29,14 +29,14 @@ func init() {
 					Text: "finds stuff in the internet",
 				}
 			}
-			if !initalized {
+			if !initialized {
 				if err := gclient.Init(TLD); err != nil {
 					log.Println("ERROR:", err.Error())
 					return adi.Response{
 						Text: "internal error",
 					}
 				}
-				initalized = true
+				initialized = true
 			}
 			results, err := gclient.Search(TLD, text, "en", false, 5)
 			if err != nil {
@@ -87,14 +87,14 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 			Text: "finds images",
 		}
 	}
-	if !initalized {
+	if !initialized {
 		if err := gclient.Init(TLD); err != nil {
 			log.Println("ERROR:", err.Error())
 			return adi.Response{
 				Text: "internal error",
 			}
 		}
-		initalized = true
+		initialized = true
 	}
 	images, err := gclient.Images(TLD, text, "de", safe, typ, 50)
 	if err != nil {
