@@ -23,7 +23,7 @@ _testmain.go
 *.test
 *.prof
 
-adi/adi
+adi/cmd/adi/adi
 guru/guru
 *.json
 log
