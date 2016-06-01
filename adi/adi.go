@@ -414,7 +414,6 @@ func Run() {
 			fmt.Sprintf("(?s)^(%s)(?:\\s+(.+))?\\s*$",
 				strings.Join(commandStrings, "|")))
 	}
-	fmt.Println("noeppsel")
 	var reToMe *regexp.Regexp
 	tick := time.NewTicker(time.Minute)
 	api := slack.New(key)
@@ -428,7 +427,6 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
-				fmt.Println("DRIN")
 				if shortCommands {
 					reToMe = regexp.MustCompile(fmt.Sprintf("^(?:<@%s>\\s*|%s)",
 						rtm.GetInfo().User.ID,
