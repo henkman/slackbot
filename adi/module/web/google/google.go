@@ -30,7 +30,7 @@ func init() {
 				}
 			}
 			if !initialized {
-				if err := gclient.Init(TLD); err != nil {
+				if err := gclient.Init(); err != nil {
 					log.Println("ERROR:", err.Error())
 					return adi.Response{
 						Text: "internal error",
@@ -38,7 +38,7 @@ func init() {
 				}
 				initialized = true
 			}
-			results, err := gclient.Search(TLD, text, "en", false, 5)
+			results, err := gclient.Search(TLD, text, "en", false, 0, 5)
 			if err != nil {
 				log.Println("ERROR:", err.Error())
 				return adi.Response{
@@ -88,7 +88,7 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 		}
 	}
 	if !initialized {
-		if err := gclient.Init(TLD); err != nil {
+		if err := gclient.Init(); err != nil {
 			log.Println("ERROR:", err.Error())
 			return adi.Response{
 				Text: "internal error",
@@ -96,7 +96,7 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 		}
 		initialized = true
 	}
-	images, err := gclient.Images(TLD, text, "de", safe, typ, 50)
+	images, err := gclient.Images(TLD, text, "de", safe, typ, 0, 50)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return adi.Response{
