@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 
 	"github.com/henkman/google"
 	"github.com/henkman/slackbot/adi"
@@ -16,8 +17,7 @@ const (
 )
 
 var (
-	gclient     google.Client
-	initialized bool
+	gSess google.Session
 )
 
 func init() {
@@ -29,16 +29,15 @@ func init() {
 					Text: "finds stuff in the internet",
 				}
 			}
-			if !initialized {
-				if err := gclient.Init(); err != nil {
+			if !gSess.IsInitialized() {
+				if err := gSess.Init(); err != nil {
 					log.Println("ERROR:", err.Error())
 					return adi.Response{
 						Text: "internal error",
 					}
 				}
-				initialized = true
 			}
-			results, err := gclient.Search(TLD, text, "en", false, 0, 5)
+			results, err := gSess.Search(TLD, text, "en", false, 0, 5)
 			if err != nil {
 				log.Println("ERROR:", err.Error())
 				return adi.Response{
@@ -79,6 +78,59 @@ func init() {
 		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
 			return googleImage(text, false, google.ImageType_Animated)
 		})
+
+	adi.RegisterFunc("tr",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			languages := []string{
+				"af", "ar", "az", "be", "bg", "ca", "cs", "cy", "da", "de",
+				"el", "en", "es", "et", "eu", "fa", "fi", "fr", "ga", "gl",
+				"hi", "hr", "ht", "hu", "hy", "id", "is", "it", "iw", "ja",
+				"ka", "ko", "lt", "lv", "mk", "ms", "mt", "nl", "no", "pl",
+				"pt", "ro", "ru", "sk", "sl", "sq", "sr", "sv", "sw", "th",
+				"tl", "tr", "uk", "ur", "vi", "yi",
+			}
+
+			help := "translates text. available languages:\n" +
+				strings.Join(languages, ", ")
+			if text == "" {
+				return adi.Response{
+					Text: help,
+				}
+			}
+			s := strings.Index(text, " ")
+			if s == -1 {
+				return adi.Response{
+					Text: help,
+				}
+			}
+			l := text[:s]
+			{
+				ok := false
+				for _, e := range languages {
+					if e == l {
+						ok = true
+						break
+					}
+				}
+				if !ok {
+					return adi.Response{
+						Text: "language not supported",
+					}
+				}
+			}
+			t := text[s:]
+			return googleTranslate(t, l)
+		})
+
+	adi.RegisterFunc("en",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			return googleTranslate(text, "en")
+		})
+
+	adi.RegisterFunc("de",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			return googleTranslate(text, "de")
+		})
 }
 
 func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
@@ -87,16 +139,15 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 			Text: "finds images",
 		}
 	}
-	if !initialized {
-		if err := gclient.Init(); err != nil {
+	if !gSess.IsInitialized() {
+		if err := gSess.Init(); err != nil {
 			log.Println("ERROR:", err.Error())
 			return adi.Response{
 				Text: "internal error",
 			}
 		}
-		initialized = true
 	}
-	images, err := gclient.Images(TLD, text, "de", safe, typ, 0, 50)
+	images, err := gSess.Images(TLD, text, "de", safe, typ, 0, 50)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return adi.Response{
@@ -118,6 +169,33 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 	}
 	return adi.Response{
 		Text:   u,
+		Charge: true,
+	}
+}
+
+func googleTranslate(text, tl string) adi.Response {
+	if text == "" {
+		return adi.Response{
+			Text: "finds images",
+		}
+	}
+	if !gSess.IsInitialized() {
+		if err := gSess.Init(); err != nil {
+			log.Println("ERROR:", err.Error())
+			return adi.Response{
+				Text: "internal error",
+			}
+		}
+	}
+	lt, err := gSess.Translate(text, "auto", tl)
+	if err != nil {
+		log.Println("ERROR:", err)
+		return adi.Response{
+			Text: "internal error",
+		}
+	}
+	return adi.Response{
+		Text:   lt.Text,
 		Charge: true,
 	}
 }

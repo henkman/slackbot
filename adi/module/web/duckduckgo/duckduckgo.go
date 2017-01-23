@@ -1,14 +1,16 @@
 package duckduckgo
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 
+	"github.com/henkman/duckduckgo"
 	"github.com/henkman/slackbot/adi"
 	"github.com/nlopes/slack"
+)
+
+var (
+	sess duckduckgo.Session
 )
 
 func init() {
@@ -44,95 +46,58 @@ func init() {
 					Text: "finds videos",
 				}
 			}
-			var r *http.Response
-			{
-				var err error
-				u := fmt.Sprintf(
-					"https://duckduckgo.com/v.js?q=%s&o=json&strict=1",
-					url.QueryEscape(text))
-				r, err = http.Get(u)
-				if err != nil {
+			if !sess.IsInitialized() {
+				if err := sess.Init(); err != nil {
 					log.Println("ERROR:", err)
 					return adi.Response{
 						Text: "internal error",
 					}
 				}
 			}
-			var ytr struct {
-				Results []struct {
-					Provider string `json:"provider"`
-					ID       string `json:"id"`
-				} `json:"results"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&ytr); err != nil {
-				r.Body.Close()
+			vids, err := sess.Videos(text, 0)
+			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
 					Text: "internal error",
 				}
 			}
-			r.Body.Close()
-			if len(ytr.Results) == 0 {
+			if len(vids) == 0 {
 				return adi.Response{
 					Text: "nothing found",
 				}
 			}
-			ids := make([]string, 0, len(ytr.Results))
-			for _, v := range ytr.Results {
-				if v.Provider == "YouTube" {
-					ids = append(ids, v.ID)
-				}
-			}
-			if len(ids) == 0 {
-				return adi.Response{
-					Text: "nothing found",
-				}
-			}
-			o := adi.RandUint32(uint32(len(ytr.Results)))
+			o := adi.RandUint32(uint32(len(vids)))
 			return adi.Response{
-				Text:   "https://www.youtube.com/watch?v=" + ids[o],
+				Text:   "https://www.youtube.com/watch?v=" + vids[o].Id,
 				Charge: true,
 			}
 		})
 }
 
 func duckduckgoImage(query string, offset uint) adi.Response {
-	var r *http.Response
-	{
-		u := "https://duckduckgo.com/i.js?o=json&q=" + url.QueryEscape(query)
-		if offset > 0 {
-			u += fmt.Sprintf("&s=%d", offset)
-		}
-		var err error
-		r, err = http.Get(u)
-		if err != nil {
+	if !sess.IsInitialized() {
+		if err := sess.Init(); err != nil {
 			log.Println("ERROR:", err)
 			return adi.Response{
-				Text: "nothing found",
+				Text: "internal error",
 			}
 		}
 	}
-	var ytr struct {
-		Results []struct {
-			Image string `json:"image"`
-		} `json:"results"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&ytr); err != nil {
-		r.Body.Close()
+	images, err := sess.Images(query, offset)
+	if err != nil {
 		log.Println("ERROR:", err)
 		return adi.Response{
-			Text: "nothing found",
+			Text: "internal error",
 		}
 	}
-	r.Body.Close()
-	if len(ytr.Results) == 0 {
+	if len(images) == 0 {
 		return adi.Response{
 			Text: "nothing found",
 		}
 	}
-	o := adi.RandUint32(uint32(len(ytr.Results)))
+	o := adi.RandUint32(uint32(len(images)))
 	return adi.Response{
-		Text:   ytr.Results[o].Image,
+		Text:   images[o].Url,
 		Charge: true,
 	}
 }
