@@ -165,9 +165,9 @@ func GetUserByName(rtm *slack.RTM, name string) *slack.User {
 		log.Println("ERROR:", err.Error())
 		return nil
 	}
-	for _, o := range us {
+	for i, o := range us {
 		if o.Name == name {
-			return &o
+			return &us[i]
 		}
 	}
 	return nil
@@ -185,6 +185,20 @@ func GetAccountByName(rtm *slack.RTM, name string) Account {
 		return nil
 	}
 	return &GetCreateUser(us.ID).Points
+}
+
+func GetChannelByName(rtm *slack.RTM, name string) *slack.Channel {
+	cs, err := rtm.GetChannels(true)
+	if err != nil {
+		log.Println("ERROR:", err.Error())
+		return nil
+	}
+	for i, c := range cs {
+		if c.Name == name {
+			return &cs[i]
+		}
+	}
+	return nil
 }
 
 func ParsePoints(src Account, name, text string) (Points, string) {

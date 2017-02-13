@@ -35,6 +35,49 @@ func init() {
 			}
 		})
 
+	adi.RegisterFunc("delmsg",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			if text == "" {
+				return adi.Response{
+					Text: "delete message",
+				}
+			}
+			s := strings.Split(text, " ")
+			if len(s) != 2 {
+				return adi.Response{
+					Text: "syntax: delmsg channel timestamp[,timestamp]",
+				}
+			}
+			c := adi.GetChannelByName(rtm, s[0])
+			if c == nil {
+				return adi.Response{
+					Text: "channel not found",
+				}
+			}
+			ts := strings.Split(s[1], ",")
+			for _, t := range ts {
+				t = strings.TrimSpace(t)
+				if len(t) < 16 {
+					return adi.Response{
+						Text: "not a valid timestamp",
+					}
+				}
+				const N = 6
+				_, _, err := rtm.DeleteMessage(c.ID,
+					t[:len(t)-N]+"."+t[len(t)-N:])
+				if err != nil {
+					log.Println("ERROR:", err)
+					return adi.Response{
+						Text: "couldn't delete",
+					}
+				}
+			}
+			return adi.Response{
+				Text:   "",
+				Charge: true,
+			}
+		})
+
 	adi.RegisterFunc("setvis",
 		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
 			if text == "" {

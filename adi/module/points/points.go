@@ -37,7 +37,7 @@ func init() {
 			for i, o := range us {
 				for _, su := range sus {
 					if su.ID == o.ID {
-						fmt.Fprintf(s, "%d. %s (%d)\n",
+						fmt.Fprintf(s, "%d. %s@%d\n",
 							i+1, su.Name, o.Points)
 						break
 					}
