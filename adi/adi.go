@@ -244,6 +244,23 @@ func GetCreateUser(id string) *User {
 	return &Users[len(Users)-1]
 }
 
+func Uniq(data sort.Interface) (size int) {
+	p, l := 0, data.Len()
+	if l <= 1 {
+		return l
+	}
+	for i := 1; i < l; i++ {
+		if !data.Less(p, i) {
+			continue
+		}
+		p++
+		if p < i {
+			data.Swap(p, i)
+		}
+	}
+	return p + 1
+}
+
 func drawLottery(rtm *slack.RTM) {
 	lot := &GlobalBank.Lottery
 	nextDraw := lot.LastDraw.Add(GlobalBank.Lottery.DrawEvery).UTC()

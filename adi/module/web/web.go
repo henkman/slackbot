@@ -6,6 +6,9 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"net/url"
+	"sort"
+	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/henkman/slackbot/adi"
@@ -13,6 +16,59 @@ import (
 )
 
 func init() {
+
+	adi.RegisterFunc("synonym",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			q := strings.TrimSpace(text)
+			if q == "" {
+				return adi.Response{
+					Text: "finds synonyms",
+				}
+			}
+			q = strings.ToLower(q)
+			r, err := http.Get(fmt.Sprintf(
+				"https://www.openthesaurus.de/synonyme/search?q=%s&format=application/json",
+				url.QueryEscape(q)))
+			if err != nil {
+				log.Println("ERROR:", err)
+				return adi.Response{
+					Text: "internal error",
+				}
+			}
+			var synsets struct {
+				Synsets []struct {
+					Terms []struct {
+						Term string `json:"term"`
+					} `json:"terms"`
+				} `json:"synsets"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&synsets); err != nil {
+				log.Println("ERROR:", err)
+				return adi.Response{
+					Text: "internal error",
+				}
+			}
+			syns := make([]string, 0, 10)
+			for _, ss := range synsets.Synsets {
+				for _, t := range ss.Terms {
+					term := strings.TrimSpace(t.Term)
+					if strings.ToLower(term) != q {
+						syns = append(syns, term)
+					}
+				}
+			}
+			if len(syns) == 0 {
+				return adi.Response{
+					Text: "no synonyms found",
+				}
+			}
+			sort.Strings(syns)
+			n := adi.Uniq(sort.StringSlice(syns))
+			return adi.Response{
+				Text:   strings.Join(syns[:n], ", "),
+				Charge: true,
+			}
+		})
 
 	adi.RegisterFunc("song",
 		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
