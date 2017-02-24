@@ -79,7 +79,8 @@ Example: poll animal?, dog, cat, hamster
 	p := fmt.Sprintf("http://www.strawpoll.me/%d", pres.ID)
 	log.Println("new poll:", p)
 	return adi.Response{
-		Text:   p,
-		Charge: true,
+		Text:        p,
+		Charge:      true,
+		UnfurlLinks: true,
 	}
 }

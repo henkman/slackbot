@@ -24,39 +24,12 @@ func init() {
 
 	adi.RegisterFunc("web",
 		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
-				return adi.Response{
-					Text: "finds stuff in the internet",
-				}
-			}
-			if !gSess.IsInitialized() {
-				if err := gSess.Init(); err != nil {
-					log.Println("ERROR:", err.Error())
-					return adi.Response{
-						Text: "internal error",
-					}
-				}
-			}
-			results, err := gSess.Search(TLD, text, "en", false, 0, 5)
-			if err != nil {
-				log.Println("ERROR:", err.Error())
-				return adi.Response{
-					Text: "internal error",
-				}
-			}
-			if len(results) == 0 {
-				return adi.Response{
-					Text: "nothing found",
-				}
-			}
-			buf := bytes.NewBufferString("")
-			for _, res := range results {
-				fmt.Fprintf(buf, "%s %s\n", res.URL, res.Content)
-			}
-			return adi.Response{
-				Text:   buf.String(),
-				Charge: true,
-			}
+			return googleSearch(text, true)
+		})
+
+	adi.RegisterFunc("nsfwweb",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			return googleSearch(text, false)
 		})
 
 	adi.RegisterFunc("img",
@@ -133,6 +106,42 @@ func init() {
 		})
 }
 
+func googleSearch(text string, safe bool) adi.Response {
+	if text == "" {
+		return adi.Response{
+			Text: "finds stuff in the internet",
+		}
+	}
+	if !gSess.IsInitialized() {
+		if err := gSess.Init(); err != nil {
+			log.Println("ERROR:", err.Error())
+			return adi.Response{
+				Text: "internal error",
+			}
+		}
+	}
+	results, err := gSess.Search(TLD, text, "en", safe, 0, 5)
+	if err != nil {
+		log.Println("ERROR:", err.Error())
+		return adi.Response{
+			Text: "internal error",
+		}
+	}
+	if len(results) == 0 {
+		return adi.Response{
+			Text: "nothing found",
+		}
+	}
+	buf := bytes.NewBufferString("")
+	for _, res := range results {
+		fmt.Fprintf(buf, "%s %s\n", res.URL, res.Content)
+	}
+	return adi.Response{
+		Text:   buf.String(),
+		Charge: true,
+	}
+}
+
 func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 	if text == "" {
 		return adi.Response{
@@ -168,8 +177,9 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 		}
 	}
 	return adi.Response{
-		Text:   u,
-		Charge: true,
+		Text:        u,
+		Charge:      true,
+		UnfurlLinks: true,
 	}
 }
 

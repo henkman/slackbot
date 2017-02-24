@@ -20,6 +20,91 @@ var (
 
 func init() {
 
+	adi.RegisterFunc("cyrill",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			s := strings.TrimSpace(text)
+			if s == "" {
+				return adi.Response{
+					Text: "prints latin script as cyrillic",
+				}
+			}
+			cyrill := []struct {
+				Cyrillic string
+				Latin    string
+			}{
+				{"щ", "schtsch"},
+				{"ч", "tsch"},
+				{"ж", "sch"},
+				{"e", "je"},
+				{"ё", "jo"},
+				{"ю", "ju"},
+				{"я", "ja"},
+				{"х", "ch"},
+				{"к", "ck"},
+				{"кс", "x"},
+				{"a", "a"},
+				{"б", "b"},
+				{"B", "w"},
+				{"г", "g"},
+				{"д", "d"},
+				{"x", "h"},
+				{"с", "s"},
+				{"з", "s"},
+				{"и", "i"},
+				{"к", "k"},
+				{"л", "l"},
+				{"м", "m"},
+				{"н", "n"},
+				{"о", "o"},
+				{"п", "p"},
+				{"р", "r"},
+				{"т", "t"},
+				{"у", "u"},
+				{"ф", "f"},
+				{"ц", "z"},
+				{"ы", "y"},
+				{"э", "ä"},
+				{"э", "v"},
+			}
+			s = strings.ToLower(s)
+			l := len(s)
+			res := make([]byte, 0, l)
+			o := 0
+		next:
+			for o < l {
+				r := l - o
+				for _, p := range cyrill {
+					pl := len(p.Latin)
+					if pl <= r && strings.HasPrefix(s[o:], p.Latin) {
+						res = append(res, []byte(p.Cyrillic)...)
+						o += pl
+						continue next
+					}
+				}
+				res = append(res, s[o])
+				o++
+			}
+			return adi.Response{
+				Text:   string(res),
+				Charge: true,
+			}
+		})
+
+	adi.RegisterFunc("decyrill",
+		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+			s := strings.TrimSpace(text)
+			if s == "" {
+				return adi.Response{
+					Text: "prints cyrillic script as latin",
+				}
+			}
+
+			return adi.Response{
+				Text:   "",
+				Charge: true,
+			}
+		})
+
 	adi.RegisterFunc("hidden",
 		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
 			hidden := make([]string, 0, len(adi.Commands))

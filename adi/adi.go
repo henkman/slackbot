@@ -19,8 +19,9 @@ import (
 )
 
 type Response struct {
-	Text   string
-	Charge bool
+	Text        string
+	Charge      bool
+	UnfurlLinks bool
 }
 
 type Level uint8
@@ -451,6 +452,7 @@ func Run() {
 	api.SetDebug(false)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
+	var bot slack.User
 Loop:
 	for {
 		select {
@@ -458,6 +460,8 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
+				info := rtm.GetInfo()
+				bot = *ev.Info.GetUserByID(info.User.ID)
 				if shortCommands {
 					reToMe = regexp.MustCompile(fmt.Sprintf("^(?:<@%s>\\s*|%s)",
 						rtm.GetInfo().User.ID,
@@ -504,18 +508,24 @@ Loop:
 					} else {
 						nc = cmd.Proxy
 					}
-					cmd, params, err := parseCommand(nc)
+					cmd, params, err = parseCommand(nc)
 					if err != nil {
 						rtm.SendMessage(rtm.NewOutgoingMessage(
 							err.Error(), ev.Channel))
 						continue Loop
 					}
-					r = cmd.Func(params, u, rtm)
-				} else {
-					r = cmd.Func(params, u, rtm)
 				}
+				r = cmd.Func(params, u, rtm)
 				if r.Text != "" {
-					rtm.SendMessage(rtm.NewOutgoingMessage(r.Text, ev.Channel))
+					rtm.PostMessage(ev.Channel, r.Text,
+						slack.PostMessageParameters{
+							Parse:       "full",
+							UnfurlLinks: r.UnfurlLinks,
+							UnfurlMedia: r.UnfurlLinks,
+							AsUser:      true,
+							Username:    bot.Name,
+							IconURL:     bot.Profile.ImageOriginal,
+						})
 				}
 				if cmd.Price > 0 && r.Charge {
 					u.Points.Sub(cmd.Price)

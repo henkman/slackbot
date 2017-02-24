@@ -127,8 +127,9 @@ func init() {
 				}
 			}
 			return adi.Response{
-				Text:   doc.Find("center i").Text(),
-				Charge: true,
+				Text:        doc.Find("center i").Text(),
+				Charge:      true,
+				UnfurlLinks: true,
 			}
 		})
 
@@ -149,8 +150,9 @@ func init() {
 				}
 			}
 			return adi.Response{
-				Text:   img,
-				Charge: true,
+				Text:        img,
+				Charge:      true,
+				UnfurlLinks: true,
 			}
 		})
 

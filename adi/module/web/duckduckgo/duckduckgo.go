@@ -68,8 +68,9 @@ func init() {
 			}
 			o := adi.RandUint32(uint32(len(vids)))
 			return adi.Response{
-				Text:   "https://www.youtube.com/watch?v=" + vids[o].Id,
-				Charge: true,
+				Text:        "https://www.youtube.com/watch?v=" + vids[o].Id,
+				Charge:      true,
+				UnfurlLinks: true,
 			}
 		})
 }
@@ -97,7 +98,8 @@ func duckduckgoImage(query string, offset uint) adi.Response {
 	}
 	o := adi.RandUint32(uint32(len(images)))
 	return adi.Response{
-		Text:   images[o].Url,
-		Charge: true,
+		Text:        images[o].Url,
+		Charge:      true,
+		UnfurlLinks: true,
 	}
 }
