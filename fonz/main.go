@@ -1,0 +1,173 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"log"
+	"math/rand"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/henkman/markov"
+	"github.com/nlopes/slack"
+)
+
+func WordJoin(words []string) string {
+	text := ""
+	for i, _ := range words {
+		text += words[i]
+		isLast := i == (len(words) - 1)
+		if !isLast {
+			next := words[i+1]
+			fc := []rune(next)[0]
+			if unicode.IsLetter(fc) || unicode.IsDigit(fc) {
+				text += " "
+			}
+		}
+	}
+	return text
+}
+
+func main() {
+	var config struct {
+		Key              string `json:"key"`
+		ReadHistoryCount int    `json:"readhistorycount"`
+		MinWords         int    `json:"minwords"`
+		MaxWords         int    `json:"maxwords"`
+	}
+	{
+		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
+		if err != nil {
+			panic(err)
+		}
+		if err := json.NewDecoder(fd).Decode(&config); err != nil {
+			fd.Close()
+		}
+		fd.Close()
+	}
+	{
+		fd, err := os.OpenFile("./log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0750)
+		if err != nil {
+			panic(err)
+		}
+		defer fd.Close()
+		log.SetOutput(fd)
+	}
+	defer func() {
+		if err := recover(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+	var tg markov.TextGenerator
+	tg.Init(time.Now().Unix())
+	if fd, err := os.Open("seed.txt"); err == nil {
+		br := bufio.NewReader(fd)
+		var buf bytes.Buffer
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				break
+			}
+			buf.Reset()
+			buf.WriteString(strings.ToLower(line[:len(line)-1]))
+			tg.Feed(&buf)
+		}
+		fd.Close()
+	}
+	api := slack.New(config.Key)
+	api.SetDebug(false)
+	rtm := api.NewRTM()
+	go rtm.ManageConnection()
+	var reAtme *regexp.Regexp
+	mr := rand.New(rand.NewSource(time.Now().Unix()))
+Loop:
+	for {
+		select {
+		case msg := <-rtm.IncomingEvents:
+			switch ev := msg.Data.(type) {
+			case *slack.HelloEvent:
+			case *slack.ConnectedEvent:
+				myid := rtm.GetInfo().User.ID
+				reAtme = regexp.MustCompile(
+					fmt.Sprintf("<@%s(?:\\|[^>]+)?>", myid))
+				feed := func(ms []slack.Message) {
+					var buf bytes.Buffer
+					for _, m := range ms {
+						if m.User == myid ||
+							reAtme.FindString(m.Text) != "" ||
+							strings.HasPrefix(m.Text, "!") ||
+							strings.Contains(m.Text, "http") {
+							continue
+						}
+						buf.Reset()
+						buf.WriteString(strings.ToLower(m.Text))
+						tg.Feed(&buf)
+					}
+				}
+				for _, ch := range rtm.GetInfo().Channels {
+					if !ch.IsMember {
+						continue
+					}
+					h, err := rtm.GetChannelHistory(ch.ID,
+						slack.HistoryParameters{
+							Count:     config.ReadHistoryCount,
+							Unreads:   false,
+							Inclusive: false,
+						})
+					if err != nil {
+						log.Fatal(err)
+					}
+					feed(h.Messages)
+				}
+				for _, ch := range rtm.GetInfo().Groups {
+					member := false
+					for _, m := range ch.Members {
+						if m == myid {
+							member = true
+							break
+						}
+					}
+					if !member {
+						continue
+					}
+					h, err := rtm.GetGroupHistory(ch.ID,
+						slack.HistoryParameters{
+							Count:     config.ReadHistoryCount,
+							Unreads:   false,
+							Inclusive: false,
+						})
+					if err != nil {
+						log.Fatal(err)
+					}
+					feed(h.Messages)
+				}
+			case *slack.MessageEvent:
+				if strings.HasPrefix(ev.Text, "!") ||
+					strings.Contains(ev.Text, "http") {
+					continue Loop
+				}
+				if reAtme.FindString(ev.Text) != "" {
+					x := mr.Int31n(int32(config.MaxWords-config.MinWords)+1) +
+						int32(config.MinWords)
+					text := WordJoin(tg.Generate(uint(x)))
+					rtm.SendMessage(rtm.NewOutgoingMessage(text, ev.Channel))
+				} else {
+					tg.Feed(bytes.NewBufferString(ev.Text))
+				}
+			case *slack.PresenceChangeEvent:
+			case *slack.LatencyReport:
+			case *slack.RTMError:
+				log.Printf("Error: %s\n", ev.Error())
+			case *slack.InvalidAuthEvent:
+				log.Println("Invalid credentials")
+				break Loop
+			default:
+			}
+		}
+	}
+}
