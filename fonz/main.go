@@ -185,7 +185,7 @@ Loop:
 					text := WordJoin(tg.Generate(uint(x)))
 					rtm.SendMessage(rtm.NewOutgoingMessage(text, ev.Channel))
 				} else {
-					tg.Feed(bytes.NewBufferString(ev.Text))
+					tg.Feed(bytes.NewBufferString(strings.ToLower(ev.Text)))
 				}
 			case *slack.PresenceChangeEvent:
 			case *slack.LatencyReport:
