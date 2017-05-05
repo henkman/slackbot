@@ -119,6 +119,7 @@ Loop:
 					if !ch.IsMember {
 						continue
 					}
+					log.Println("reading channel", ch.Name)
 					l := ""
 					for {
 						h, err := rtm.GetChannelHistory(ch.ID,
@@ -152,6 +153,7 @@ Loop:
 					if !member {
 						continue
 					}
+					log.Println("reading group", ch.Name)
 					l := ""
 					for {
 						h, err := rtm.GetGroupHistory(ch.ID,
@@ -171,9 +173,9 @@ Loop:
 						l = h.Messages[len(h.Messages)-1].Timestamp
 					}
 				}
+				log.Println("init done")
 			case *slack.MessageEvent:
 				if strings.HasPrefix(ev.Text, "!") ||
-					strings.Contains(ev.Text, "<@") ||
 					strings.Contains(ev.Text, "<!") ||
 					strings.Contains(ev.Text, "<#") ||
 					strings.Contains(ev.Text, "http") {
@@ -184,7 +186,8 @@ Loop:
 						int32(config.MinWords)
 					text := WordJoin(tg.Generate(uint(x)))
 					rtm.SendMessage(rtm.NewOutgoingMessage(text, ev.Channel))
-				} else {
+					continue Loop
+				} else if !strings.Contains(ev.Text, "<@") {
 					tg.Feed(bytes.NewBufferString(strings.ToLower(ev.Text)))
 				}
 			case *slack.PresenceChangeEvent:
