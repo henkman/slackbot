@@ -25,7 +25,12 @@ func WordJoin(words []string) string {
 		if !isLast {
 			next := words[i+1]
 			fc := []rune(next)[0]
-			if unicode.IsLetter(fc) || unicode.IsDigit(fc) {
+			word := []rune(words[i])
+			lc := word[len(word)-1]
+			if lc == '.' || lc == ',' || lc == '?' ||
+				lc == '!' || lc == ';' || lc == ':' ||
+				(unicode.IsLetter(lc) || unicode.IsDigit(lc)) &&
+					(unicode.IsLetter(fc) || unicode.IsDigit(fc)) {
 				text += " "
 			}
 		}
@@ -35,10 +40,9 @@ func WordJoin(words []string) string {
 
 func main() {
 	var config struct {
-		Key              string `json:"key"`
-		ReadHistoryCount int    `json:"readhistorycount"`
-		MinWords         int    `json:"minwords"`
-		MaxWords         int    `json:"maxwords"`
+		Key      string `json:"key"`
+		MinWords int    `json:"minwords"`
+		MaxWords int    `json:"maxwords"`
 	}
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
@@ -95,12 +99,14 @@ Loop:
 				myid := rtm.GetInfo().User.ID
 				reAtme = regexp.MustCompile(
 					fmt.Sprintf("<@%s(?:\\|[^>]+)?>", myid))
+				var buf bytes.Buffer
 				feed := func(ms []slack.Message) {
-					var buf bytes.Buffer
 					for _, m := range ms {
 						if m.User == myid ||
-							reAtme.FindString(m.Text) != "" ||
 							strings.HasPrefix(m.Text, "!") ||
+							strings.Contains(m.Text, "<@") ||
+							strings.Contains(m.Text, "<!") ||
+							strings.Contains(m.Text, "<#") ||
 							strings.Contains(m.Text, "http") {
 							continue
 						}
@@ -113,16 +119,27 @@ Loop:
 					if !ch.IsMember {
 						continue
 					}
-					h, err := rtm.GetChannelHistory(ch.ID,
-						slack.HistoryParameters{
-							Count:     config.ReadHistoryCount,
-							Unreads:   false,
-							Inclusive: false,
-						})
-					if err != nil {
-						log.Fatal(err)
+					l := ""
+					for {
+						h, err := rtm.GetChannelHistory(ch.ID,
+							slack.HistoryParameters{
+								Count:     1000,
+								Unreads:   true,
+								Inclusive: false,
+								Latest:    l,
+							})
+						if err != nil {
+							log.Fatal(err)
+						}
+						feed(h.Messages)
+						if !h.HasMore {
+							break
+						}
+						if !h.HasMore {
+							break
+						}
+						l = h.Messages[len(h.Messages)-1].Timestamp
 					}
-					feed(h.Messages)
 				}
 				for _, ch := range rtm.GetInfo().Groups {
 					member := false
@@ -135,19 +152,30 @@ Loop:
 					if !member {
 						continue
 					}
-					h, err := rtm.GetGroupHistory(ch.ID,
-						slack.HistoryParameters{
-							Count:     config.ReadHistoryCount,
-							Unreads:   false,
-							Inclusive: false,
-						})
-					if err != nil {
-						log.Fatal(err)
+					l := ""
+					for {
+						h, err := rtm.GetGroupHistory(ch.ID,
+							slack.HistoryParameters{
+								Count:     1000,
+								Unreads:   true,
+								Inclusive: false,
+								Latest:    l,
+							})
+						if err != nil {
+							log.Fatal(err)
+						}
+						feed(h.Messages)
+						if !h.HasMore {
+							break
+						}
+						l = h.Messages[len(h.Messages)-1].Timestamp
 					}
-					feed(h.Messages)
 				}
 			case *slack.MessageEvent:
 				if strings.HasPrefix(ev.Text, "!") ||
+					strings.Contains(ev.Text, "<@") ||
+					strings.Contains(ev.Text, "<!") ||
+					strings.Contains(ev.Text, "<#") ||
 					strings.Contains(ev.Text, "http") {
 					continue Loop
 				}
