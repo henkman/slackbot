@@ -28,7 +28,7 @@ func WordJoin(words []string) string {
 			word := []rune(words[i])
 			lc := word[len(word)-1]
 			if lc == '.' || lc == ',' || lc == '?' ||
-				lc == '!' || lc == ';' || lc == ':' ||
+				lc == '!' || lc == ';' ||
 				(unicode.IsLetter(lc) || unicode.IsDigit(lc)) &&
 					(unicode.IsLetter(fc) || unicode.IsDigit(fc)) {
 				text += " "
