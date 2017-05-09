@@ -136,9 +136,6 @@ Loop:
 						if !h.HasMore {
 							break
 						}
-						if !h.HasMore {
-							break
-						}
 						l = h.Messages[len(h.Messages)-1].Timestamp
 					}
 				}
