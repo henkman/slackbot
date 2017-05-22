@@ -15,13 +15,13 @@ import (
 func init() {
 
 	adi.RegisterFunc("mpoll",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return poll(text, true)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return poll(m.Text, true)
 		})
 
 	adi.RegisterFunc("spoll",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return poll(text, false)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return poll(m.Text, false)
 		})
 }
 

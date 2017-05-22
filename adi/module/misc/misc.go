@@ -1,8 +1,10 @@
-package admin
+package misc
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"strconv"
 
 	"sort"
 	"strings"
@@ -15,14 +17,61 @@ import (
 )
 
 var (
-	cvm *otto.Otto
+	cvm       *otto.Otto
+	startTime time.Time
 )
+
+type TimeStamp struct {
+	Unix   int64
+	Unique string
+}
+
+func parseTimestamp(s string) (TimeStamp, error) {
+	var ts TimeStamp
+	o := strings.IndexByte(s, '.')
+	if o == -1 {
+		return ts, errors.New("not a valid timestamp")
+	}
+	unix, err := strconv.ParseInt(s[:o], 10, 64)
+	if err != nil {
+		return ts, errors.New("not a valid timestamp")
+	}
+	return TimeStamp{
+		Unix:   unix,
+		Unique: s[o+1:],
+	}, nil
+}
 
 func init() {
 
+	startTime = time.Now()
+
+	adi.RegisterFunc("uptime",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return adi.Response{
+				Text:   time.Since(startTime).String(),
+				Charge: true,
+			}
+		})
+
+	adi.RegisterFunc("ping",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			ts, err := parseTimestamp(m.Timestamp)
+			if err != nil {
+				return adi.Response{
+					Text: err.Error(),
+				}
+			}
+			mt := time.Unix(ts.Unix, 0)
+			return adi.Response{
+				Text:   time.Since(mt).String(),
+				Charge: true,
+			}
+		})
+
 	adi.RegisterFunc("cyrill",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			s := strings.TrimSpace(text)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			s := strings.TrimSpace(m.Text)
 			if s == "" {
 				return adi.Response{
 					Text: "prints latin script as cyrillic",
@@ -91,8 +140,8 @@ func init() {
 		})
 
 	adi.RegisterFunc("decyrill",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			s := strings.TrimSpace(text)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			s := strings.TrimSpace(m.Text)
 			if s == "" {
 				return adi.Response{
 					Text: "prints cyrillic script as latin",
@@ -106,7 +155,7 @@ func init() {
 		})
 
 	adi.RegisterFunc("hidden",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			hidden := make([]string, 0, len(adi.Commands))
 			for _, c := range adi.Commands {
 				if !c.Visible {
@@ -121,13 +170,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("delmsg",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "delete message",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 2 {
 				return adi.Response{
 					Text: "syntax: delmsg channel timestamp[,timestamp]",
@@ -142,15 +191,14 @@ func init() {
 			ts := strings.Split(s[1], ",")
 			for _, t := range ts {
 				t = strings.TrimSpace(t)
-				if len(t) < 16 {
+				ts, err := parseTimestamp(m.Timestamp)
+				if err != nil {
 					return adi.Response{
-						Text: "not a valid timestamp",
+						Text: err.Error(),
 					}
 				}
-				const N = 6
-				_, _, err := rtm.DeleteMessage(c.ID,
-					t[:len(t)-N]+"."+t[len(t)-N:])
-				if err != nil {
+				if _, _, err := rtm.DeleteMessage(c.ID,
+					fmt.Sprintf("%d.%s", ts.Unix, ts.Unique)); err != nil {
 					log.Println("ERROR:", err)
 					return adi.Response{
 						Text: "couldn't delete",
@@ -164,13 +212,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("setvis",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "set visiblity of a command",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 2 {
 				return adi.Response{
 					Text: "syntax: setvis [command] [visible|hidden]",
@@ -191,27 +239,27 @@ func init() {
 		})
 
 	adi.RegisterFunc("say",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "says something",
 				}
 			}
 			return adi.Response{
-				Text:   text,
+				Text:   m.Text,
 				Charge: true,
 			}
 		})
 
 	adi.RegisterFunc("id",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
-					Text:   fmt.Sprintf("your id: %s", u.ID),
+					Text:   fmt.Sprintf("your id: %s", m.User.ID),
 					Charge: true,
 				}
 			}
-			us := adi.GetUserByName(rtm, text)
+			us := adi.GetUserByName(rtm, m.Text)
 			if us == nil {
 				return adi.Response{
 					Text: "user not found",
@@ -224,8 +272,8 @@ func init() {
 		})
 
 	adi.RegisterFunc("calc",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: `a calculator
 	Usage:
@@ -236,7 +284,7 @@ func init() {
 	  Constants: e, pi, π`,
 				}
 			}
-			res, err := compute.Evaluate(text)
+			res, err := compute.Evaluate(m.Text)
 			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
@@ -244,13 +292,13 @@ func init() {
 				}
 			}
 			return adi.Response{
-				Text:   fmt.Sprintf("%s=%g", text, res),
+				Text:   fmt.Sprintf("%s=%g", m.Text, res),
 				Charge: true,
 			}
 		})
 
 	adi.RegisterFunc("coin",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			var t string
 			if adi.RandBool() {
 				t = "heads"
@@ -264,13 +312,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("js",
-		func(text string, u *adi.User, rtm *slack.RTM) (r adi.Response) {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) (r adi.Response) {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "interactive javascript console. type reload to reload the VM",
 				}
 			}
-			if text == "reload" {
+			if m.Text == "reload" {
 				cvm = otto.New()
 				cvm.Set("console", otto.UndefinedValue())
 				return adi.Response{
@@ -295,7 +343,7 @@ func init() {
 					panic("timeout")
 				}
 			}()
-			val, err := cvm.Run(text)
+			val, err := cvm.Run(m.Text)
 			if err != nil {
 				r = adi.Response{
 					Text: err.Error(),
@@ -310,13 +358,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("rnd",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "randomly prints one of the comma separated texts given",
 				}
 			}
-			c := strings.Split(text, ",")
+			c := strings.Split(m.Text, ",")
 			if len(c) == 1 {
 				return adi.Response{
 					Text:   strings.TrimSpace(c[0]),

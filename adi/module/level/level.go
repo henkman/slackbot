@@ -11,14 +11,14 @@ import (
 
 func init() {
 
-	adi.RegisterFunc("lvl", func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-		if text == "" {
+	adi.RegisterFunc("lvl", func(m adi.Message, rtm *slack.RTM) adi.Response {
+		if m.Text == "" {
 			return adi.Response{
-				Text:   fmt.Sprintf("your level: %d", u.Level),
+				Text:   fmt.Sprintf("your level: %d", m.User.Level),
 				Charge: true,
 			}
 		}
-		us := adi.GetUserByName(rtm, text)
+		us := adi.GetUserByName(rtm, m.Text)
 		if us == nil {
 			return adi.Response{
 				Text: "user not found",
@@ -31,13 +31,13 @@ func init() {
 		}
 	})
 
-	adi.RegisterFunc("setlvl", func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-		if text == "" {
+	adi.RegisterFunc("setlvl", func(m adi.Message, rtm *slack.RTM) adi.Response {
+		if m.Text == "" {
 			return adi.Response{
 				Text: "set level of user",
 			}
 		}
-		s := strings.Split(text, " ")
+		s := strings.Split(m.Text, " ")
 		if len(s) != 2 {
 			return adi.Response{
 				Text: "syntax: setlevel [user] [level]",
@@ -64,13 +64,13 @@ func init() {
 		}
 	})
 
-	adi.RegisterFunc("rqlvl", func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-		if text == "" {
+	adi.RegisterFunc("rqlvl", func(m adi.Message, rtm *slack.RTM) adi.Response {
+		if m.Text == "" {
 			return adi.Response{
 				Text: "find out the required level of a command",
 			}
 		}
-		cmd := adi.GetCommandByName(text)
+		cmd := adi.GetCommandByName(m.Text)
 		if cmd == nil {
 			return adi.Response{
 				Text: "command not found",
@@ -78,18 +78,18 @@ func init() {
 		}
 		return adi.Response{
 			Text: fmt.Sprintf(
-				"%s requires level %d", text, cmd.RequiredLevel),
+				"%s requires level %d", m.Text, cmd.RequiredLevel),
 			Charge: true,
 		}
 	})
 
-	adi.RegisterFunc("setrqlvl", func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-		if text == "" {
+	adi.RegisterFunc("setrqlvl", func(m adi.Message, rtm *slack.RTM) adi.Response {
+		if m.Text == "" {
 			return adi.Response{
 				Text: "set required level for a command",
 			}
 		}
-		s := strings.Split(text, " ")
+		s := strings.Split(m.Text, " ")
 		if len(s) != 2 {
 			return adi.Response{
 				Text: "syntax: setrqlvl [command] [level]",

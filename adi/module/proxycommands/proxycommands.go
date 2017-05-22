@@ -11,13 +11,13 @@ import (
 func init() {
 
 	adi.RegisterFunc("setproxy",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "sets a proxy command",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) < 2 {
 				return adi.Response{
 					Text: "syntax: setproxy [name] [cmd]",
@@ -50,15 +50,15 @@ func init() {
 		})
 
 	adi.RegisterFunc("delproxy",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "deletes a proxy command",
 				}
 			}
 			o := -1
 			for i, _ := range adi.Commands {
-				if adi.Commands[i].Proxy != "" && adi.Commands[i].Name == text {
+				if adi.Commands[i].Proxy != "" && adi.Commands[i].Name == m.Text {
 					o = i
 					break
 				}
@@ -71,7 +71,7 @@ func init() {
 			adi.Commands = append(adi.Commands[:o], adi.Commands[o+1:]...)
 			adi.ResetCommands()
 			return adi.Response{
-				Text:   fmt.Sprintf("%s deleted", text),
+				Text:   fmt.Sprintf("%s deleted", m.Text),
 				Charge: true,
 			}
 		})

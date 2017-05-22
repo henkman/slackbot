@@ -23,37 +23,37 @@ var (
 func init() {
 
 	adi.RegisterFunc("web",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleSearch(text, true)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleSearch(m.Text, true)
 		})
 
 	adi.RegisterFunc("nsfwweb",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleSearch(text, false)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleSearch(m.Text, false)
 		})
 
 	adi.RegisterFunc("img",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleImage(text, true, google.ImageType_Any)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleImage(m.Text, true, google.ImageType_Any)
 		})
 
 	adi.RegisterFunc("nsfwimg",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleImage(text, false, google.ImageType_Any)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleImage(m.Text, false, google.ImageType_Any)
 		})
 
 	adi.RegisterFunc("gif",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleImage(text, true, google.ImageType_Animated)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleImage(m.Text, true, google.ImageType_Animated)
 		})
 
 	adi.RegisterFunc("nsfwgif",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleImage(text, false, google.ImageType_Animated)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleImage(m.Text, false, google.ImageType_Animated)
 		})
 
 	adi.RegisterFunc("tr",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			languages := []string{
 				"af", "ar", "az", "be", "bg", "ca", "cs", "cy", "da", "de",
 				"el", "en", "es", "et", "eu", "fa", "fi", "fr", "ga", "gl",
@@ -65,18 +65,18 @@ func init() {
 
 			help := "translates text. available languages:\n" +
 				strings.Join(languages, ", ")
-			if text == "" {
+			if m.Text == "" {
 				return adi.Response{
 					Text: help,
 				}
 			}
-			s := strings.Index(text, " ")
+			s := strings.Index(m.Text, " ")
 			if s == -1 {
 				return adi.Response{
 					Text: help,
 				}
 			}
-			l := text[:s]
+			l := m.Text[:s]
 			{
 				ok := false
 				for _, e := range languages {
@@ -91,18 +91,18 @@ func init() {
 					}
 				}
 			}
-			t := text[s:]
+			t := m.Text[s:]
 			return googleTranslate(t, l)
 		})
 
 	adi.RegisterFunc("en",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleTranslate(text, "en")
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleTranslate(m.Text, "en")
 		})
 
 	adi.RegisterFunc("de",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			return googleTranslate(text, "de")
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			return googleTranslate(m.Text, "de")
 		})
 }
 

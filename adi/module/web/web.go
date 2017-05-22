@@ -18,8 +18,8 @@ import (
 func init() {
 
 	adi.RegisterFunc("synonym",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			q := strings.TrimSpace(text)
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			q := strings.TrimSpace(m.Text)
 			if q == "" {
 				return adi.Response{
 					Text: "finds synonyms",
@@ -71,7 +71,7 @@ func init() {
 		})
 
 	adi.RegisterFunc("song",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			var r *http.Response
 			{
 				var err error
@@ -118,7 +118,7 @@ func init() {
 		})
 
 	adi.RegisterFunc("fact",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			doc, err := goquery.NewDocument("http://randomfunfacts.com/")
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -134,7 +134,7 @@ func init() {
 		})
 
 	adi.RegisterFunc("toon",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			doc, err := goquery.NewDocument("http://www.veryfunnycartoons.com/")
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -157,7 +157,7 @@ func init() {
 		})
 
 	adi.RegisterFunc("insult",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			doc, err := goquery.NewDocument("http://www.randominsults.net/")
 			if err != nil {
 				log.Println("ERROR:", err)

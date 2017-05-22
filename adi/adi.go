@@ -18,6 +18,12 @@ import (
 	"github.com/nlopes/slack"
 )
 
+type Message struct {
+	Text      string
+	User      *User
+	Timestamp string
+}
+
 type Response struct {
 	Text        string
 	Charge      bool
@@ -53,7 +59,7 @@ type Account interface {
 	Balance() Points
 }
 
-type CommandFunc func(text string, u *User, rtm *slack.RTM) Response
+type CommandFunc func(m Message, rtm *slack.RTM) Response
 
 type Command struct {
 	Name          string      `json:"name"`
@@ -515,7 +521,11 @@ Loop:
 						continue Loop
 					}
 				}
-				r = cmd.Func(params, u, rtm)
+				r = cmd.Func(Message{
+					Text:      params,
+					User:      u,
+					Timestamp: ev.Timestamp,
+				}, rtm)
 				if r.Text != "" {
 					rtm.PostMessage(ev.Channel, r.Text,
 						slack.PostMessageParameters{

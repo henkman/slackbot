@@ -22,7 +22,7 @@ func (a UsersByRank) Less(i, j int) bool { return a[i].Points > a[j].Points }
 func init() {
 
 	adi.RegisterFunc("rank",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			us := make([]adi.User, len(adi.Users))
 			copy(us, adi.Users)
 			sort.Sort(UsersByRank(us))
@@ -50,13 +50,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("setprc",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "set price of a command",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 2 {
 				return adi.Response{
 					Text: "syntax: setprc [command] [price]",
@@ -82,20 +82,20 @@ func init() {
 		})
 
 	adi.RegisterFunc("givepts",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "give points to user",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 2 {
 				return adi.Response{
 					Text: "syntax: givepts [user] [points|all]",
 				}
 			}
 			var src, dst adi.Account
-			src = &u.Points
+			src = &m.User.Points
 			n, err := adi.ParsePoints(src, "", s[1])
 			if err != "" {
 				return adi.Response{
@@ -123,13 +123,13 @@ func init() {
 		})
 
 	adi.RegisterFunc("duel",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "challenge somebody to get their points",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 2 {
 				return adi.Response{
 					Text: "syntax: duel [user] [points|all]",
@@ -141,7 +141,7 @@ func init() {
 				}
 			}
 			var src, dst adi.Account
-			src = &u.Points
+			src = &m.User.Points
 			dst = adi.GetAccountByName(rtm, s[0])
 			if dst == nil {
 				return adi.Response{
@@ -217,33 +217,33 @@ func init() {
 		})
 
 	adi.RegisterFunc("pts",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
-					Text:   fmt.Sprintf("your points: %d", u.Points),
+					Text:   fmt.Sprintf("your points: %d", m.User.Points),
 					Charge: true,
 				}
 			}
-			src := adi.GetAccountByName(rtm, text)
+			src := adi.GetAccountByName(rtm, m.Text)
 			if src == nil {
 				return adi.Response{
 					Text: "user not found",
 				}
 			}
 			return adi.Response{
-				Text:   fmt.Sprintf("%s points: %d", text, src.Balance()),
+				Text:   fmt.Sprintf("%s points: %d", m.Text, src.Balance()),
 				Charge: true,
 			}
 		})
 
 	adi.RegisterFunc("trpts",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "transfer points",
 				}
 			}
-			s := strings.Split(text, " ")
+			s := strings.Split(m.Text, " ")
 			if len(s) != 3 {
 				return adi.Response{
 					Text: "syntax: trpts [src] [dst] [points|all]",
@@ -282,28 +282,28 @@ func init() {
 		})
 
 	adi.RegisterFunc("cost",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
-			if text == "" {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
 				return adi.Response{
 					Text: "find out the price of a command",
 				}
 			}
-			cmd := adi.GetCommandByName(text)
+			cmd := adi.GetCommandByName(m.Text)
 			if cmd == nil {
 				return adi.Response{
 					Text: "command not found",
 				}
 			}
 			return adi.Response{
-				Text:   fmt.Sprintf("%s costs %d", text, cmd.Price),
+				Text:   fmt.Sprintf("%s costs %d", m.Text, cmd.Price),
 				Charge: true,
 			}
 		})
 
 	adi.RegisterFunc("lottery",
-		func(text string, u *adi.User, rtm *slack.RTM) adi.Response {
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			lot := &adi.GlobalBank.Lottery
-			if text == "" {
+			if m.Text == "" {
 				return adi.Response{
 					Text: fmt.Sprintf(
 						"tickets[price:%d, sold:%d], drawing:%s, pot:%d | try 'lottery help' for help",
@@ -314,7 +314,7 @@ func init() {
 					),
 				}
 			}
-			if text == "help" {
+			if m.Text == "help" {
 				return adi.Response{
 					Text: `the lottery is drawn periodically. users can buy multiple tickets.
 one of the sold tickets is chosen as winner and gets the whole pot.
@@ -324,14 +324,14 @@ if a drawing comes up and only one user bought tickets:
 use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 				}
 			}
-			if text == "info" {
+			if m.Text == "info" {
 				if lot.TicketsSold == 0 {
 					return adi.Response{
 						Text: "no one has bought a ticket",
 					}
 				}
 				var t string
-				ts, ok := lot.Tickets[u.ID]
+				ts, ok := lot.Tickets[m.User.ID]
 				if ok {
 					t = fmt.Sprintf(
 						"you have %d tickets. %d other users bought %d tickets",
@@ -345,10 +345,10 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 					Text: t,
 				}
 			}
-			var src adi.Account = &u.Points
+			var src adi.Account = &m.User.Points
 			var n uint64
 			{
-				if text == "all" {
+				if m.Text == "all" {
 					if src.Balance() < lot.TicketPrice {
 						return adi.Response{
 							Text: "you do not have enough points.",
@@ -356,7 +356,7 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 					}
 					n = uint64(src.Balance() / lot.TicketPrice)
 				} else {
-					t, err := strconv.ParseUint(text, 10, 64)
+					t, err := strconv.ParseUint(m.Text, 10, 64)
 					if err != nil {
 						return adi.Response{
 							Text: "syntax: lottery [tickets|all]",
@@ -382,16 +382,16 @@ use 'lottery [tickets|all]' to buy tickets, 'lottery info' to get infos`,
 					Text: "you do not have enough points.",
 				}
 			}
-			ts, ok := lot.Tickets[u.ID]
+			ts, ok := lot.Tickets[m.User.ID]
 			if ok {
 				if ts > (math.MaxUint64 - n) {
 					return adi.Response{
 						Text: "can't buy that much tickets",
 					}
 				}
-				lot.Tickets[u.ID] += n
+				lot.Tickets[m.User.ID] += n
 			} else {
-				lot.Tickets[u.ID] = n
+				lot.Tickets[m.User.ID] = n
 			}
 			lot.TicketsSold += n
 			src.Sub(p)
