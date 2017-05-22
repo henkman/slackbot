@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/alfredxing/calc/compute"
+	"github.com/dop251/goja"
+	"github.com/hako/durafmt"
 	"github.com/henkman/slackbot/adi"
 	"github.com/nlopes/slack"
-	"github.com/robertkrimen/otto"
 )
 
 var (
-	cvm       *otto.Otto
+	vm        *goja.Runtime
 	startTime time.Time
 )
 
@@ -48,8 +49,9 @@ func init() {
 
 	adi.RegisterFunc("uptime",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			diff := time.Since(startTime)
 			return adi.Response{
-				Text:   time.Since(startTime).String(),
+				Text:   durafmt.Parse(diff).String(),
 				Charge: true,
 			}
 		})
@@ -63,8 +65,9 @@ func init() {
 				}
 			}
 			mt := time.Unix(ts.Unix, 0)
+			diff := time.Since(mt)
 			return adi.Response{
-				Text:   time.Since(mt).String(),
+				Text:   diff.String(),
 				Charge: true,
 			}
 		})
@@ -135,21 +138,6 @@ func init() {
 			}
 			return adi.Response{
 				Text:   string(res),
-				Charge: true,
-			}
-		})
-
-	adi.RegisterFunc("decyrill",
-		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			s := strings.TrimSpace(m.Text)
-			if s == "" {
-				return adi.Response{
-					Text: "prints cyrillic script as latin",
-				}
-			}
-
-			return adi.Response{
-				Text:   "",
 				Charge: true,
 			}
 		})
@@ -319,39 +307,53 @@ func init() {
 				}
 			}
 			if m.Text == "reload" {
-				cvm = otto.New()
-				cvm.Set("console", otto.UndefinedValue())
+				vm = goja.New()
 				return adi.Response{
 					Text: "VM reloaded",
 				}
 			}
-			if cvm == nil {
-				cvm = otto.New()
-				cvm.Set("console", otto.UndefinedValue())
+			if vm == nil {
+				vm = goja.New()
 			}
-			cvm.Interrupt = make(chan func(), 1)
+			type Done struct {
+				Value goja.Value
+				Error error
+			}
+			done := make(chan Done)
+			// NOTE: goja has problems with Exception.Error and .String
+			// so I recover the panic thrown in there until they fix it
 			defer func() {
-				if timeout := recover(); timeout != nil {
+				if x := recover(); x != nil {
 					r = adi.Response{
-						Text: "Code took too long",
+						Text:   "error",
+						Charge: true,
 					}
 				}
 			}()
 			go func() {
-				time.Sleep(time.Second)
-				cvm.Interrupt <- func() {
-					panic("timeout")
-				}
+				v, err := vm.RunString(m.Text)
+				done <- Done{v, err}
 			}()
-			val, err := cvm.Run(m.Text)
-			if err != nil {
+			t := time.NewTimer(time.Second)
+			select {
+			case <-t.C:
+				vm.Interrupt("halt")
 				r = adi.Response{
-					Text: err.Error(),
-				}
-			} else {
-				r = adi.Response{
-					Text:   val.String(),
+					Text:   "script took too long to execute",
 					Charge: true,
+				}
+			case d := <-done:
+				t.Stop()
+				if d.Error != nil {
+					r = adi.Response{
+						Text:   d.Error.Error(),
+						Charge: true,
+					}
+				} else {
+					r = adi.Response{
+						Text:   d.Value.String(),
+						Charge: true,
+					}
 				}
 			}
 			return
