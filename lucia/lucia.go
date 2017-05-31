@@ -18,12 +18,7 @@ type Order struct {
 	Extra  string
 }
 
-func getCurrentUser(rtm *slack.RTM, id string) *slack.User {
-	users, err := rtm.GetUsers()
-	if err != nil {
-		log.Println("ERROR:", err.Error())
-		return nil
-	}
+func getUserById(users []slack.User, id string) *slack.User {
 	for i, o := range users {
 		if o.ID == id {
 			return &users[i]
@@ -82,13 +77,6 @@ Loop:
 				if m == nil {
 					continue Loop
 				}
-				user := getCurrentUser(rtm, ev.User)
-				if user == nil {
-					log.Println("ERROR:", "couldn't get user,", ev.User)
-					rtm.SendMessage(rtm.NewOutgoingMessage(
-						"sorry, I didn't get the name correctly", ev.Channel))
-					continue Loop
-				}
 				switch m[1] {
 				case "order":
 					if m[2] == "" {
@@ -106,13 +94,13 @@ Loop:
 						Number: num,
 						Extra:  m[3],
 					}
-					orders[user.Name] = order
+					orders[ev.User] = order
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						fmt.Sprintf("your order(%d %s) has been added",
 							order.Number, order.Extra), ev.Channel))
 				case "cancel":
-					if _, ok := orders[user.Name]; ok {
-						delete(orders, user.Name)
+					if _, ok := orders[ev.User]; ok {
+						delete(orders, ev.User)
 						rtm.SendMessage(rtm.NewOutgoingMessage(
 							"your order has been canceled", ev.Channel))
 					} else {
@@ -120,6 +108,13 @@ Loop:
 							"you currently have no order", ev.Channel))
 					}
 				case "list":
+					users, err := rtm.GetUsers()
+					if err != nil {
+						log.Println("ERROR:", "couldn't get users")
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"internal error", ev.Channel))
+						continue Loop
+					}
 					var buffer bytes.Buffer
 					buffer.WriteString(strconv.Itoa(len(orders)))
 					if len(orders) == 1 {
@@ -127,7 +122,11 @@ Loop:
 					} else {
 						buffer.WriteString(" orders were made:\n\n")
 					}
-					for user, order := range orders {
+					for userid, order := range orders {
+						user := getUserById(users, userid)
+						if user == nil {
+							continue
+						}
 						if order.Extra != "" {
 							buffer.WriteString(
 								fmt.Sprintf("%s - %d(%s)\n",
