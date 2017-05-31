@@ -139,10 +139,10 @@ Loop:
 						if order.Extra != "" {
 							buffer.WriteString(
 								fmt.Sprintf("%s - %d(%s)\n",
-									user, order.Number, order.Extra))
+									user.Name, order.Number, order.Extra))
 						} else {
 							buffer.WriteString(
-								fmt.Sprintf("%s - %d\n", user, order.Number))
+								fmt.Sprintf("%s - %d\n", user.Name, order.Number))
 						}
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
