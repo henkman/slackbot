@@ -70,7 +70,7 @@ Loop:
 			case *slack.ConnectedEvent:
 				reCommand = regexp.MustCompile(
 					fmt.Sprintf(
-						"^<@%s(?:|[^>]+)?>\\s*(order|cancel|list|clear|card)?\\s*(\\d+)?\\s*(.*)$",
+						"^<@%s(?:|[^>]+)?>\\s*(show|order|cancel|list|clear|card)?\\s*(\\d+)?\\s*(.*)$",
 						rtm.GetInfo().User.ID))
 			case *slack.MessageEvent:
 				m := reCommand.FindStringSubmatch(ev.Text)
@@ -103,6 +103,15 @@ Loop:
 						delete(orders, ev.User)
 						rtm.SendMessage(rtm.NewOutgoingMessage(
 							"your order has been canceled", ev.Channel))
+					} else {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"you currently have no order", ev.Channel))
+					}
+				case "show":
+					if order, ok := orders[ev.User]; ok {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							fmt.Sprintf("your current order: %d(%s)",
+								order.Number, order.Extra), ev.Channel))
 					} else {
 						rtm.SendMessage(rtm.NewOutgoingMessage(
 							"you currently have no order", ev.Channel))
