@@ -12,6 +12,7 @@ import (
 	_ "github.com/henkman/slackbot/adi/module/web/duckduckgo"
 	_ "github.com/henkman/slackbot/adi/module/web/google"
 	_ "github.com/henkman/slackbot/adi/module/web/poll"
+	_ "github.com/henkman/slackbot/adi/module/web/yahoo"
 )
 
 func main() {
