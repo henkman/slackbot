@@ -83,7 +83,7 @@ Loop:
 			case *slack.ConnectedEvent:
 				reCommand = regexp.MustCompile(
 					fmt.Sprintf(
-						"^<@%s(?:|[^>]+)?>\\s*(order|list|remove|clear|listall|clearall)?\\s*(\\d+)?\\s*(.*)$",
+						"^<@%s(?:|[^>]+)?>\\s*(listall|clearall|order|list|remove|clear)?\\s*(\\d+)?\\s*(.*)$",
 						rtm.GetInfo().User.ID))
 			case *slack.MessageEvent:
 				m := reCommand.FindStringSubmatch(ev.Text)
@@ -144,11 +144,12 @@ Loop:
 					for i, order := range orderer.Orders {
 						if order.Extra != "" {
 							buffer.WriteString(
-								fmt.Sprintf("\t%d. %s - %d(%s)\n",
+								fmt.Sprintf("\t%d. %d(%s)\n",
 									i, order.Number, order.Extra))
 						} else {
 							buffer.WriteString(
-								fmt.Sprintf("\t%d. %s - %d\n", i, order.Number))
+								fmt.Sprintf("\t%d. %d\n",
+									i, order.Number))
 						}
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
@@ -199,36 +200,40 @@ Loop:
 						continue Loop
 					}
 					var buffer bytes.Buffer
-					buffer.WriteString(fmt.Sprintf("current orders:\n"))
+					buffer.WriteString("current orders:\n")
 					for _, orderer := range orderers {
 						user := getUserById(users, orderer.ID)
-						if user == nil {
+						if user == nil || len(orderer.Orders) == 0 {
 							continue
 						}
 						if len(orderer.Orders) == 1 {
 							order := orderer.Orders[0]
 							if order.Extra != "" {
 								buffer.WriteString(
-									fmt.Sprintf("%s: %s - %d(%s)\n",
+									fmt.Sprintf("\t%s - %d(%s)\n",
 										user.Name, order.Number, order.Extra))
 							} else {
 								buffer.WriteString(
-									fmt.Sprintf("%s: %s - %d\n",
+									fmt.Sprintf("\t%s - %d\n",
 										user.Name, order.Number))
 							}
 							continue
 						}
-						buffer.WriteString(fmt.Sprintf("%s:\n", user.Name))
-						for _, order := range orderer.Orders {
+						buffer.WriteString(fmt.Sprintf("\t%s - ", user.Name))
+						for i, order := range orderer.Orders {
 							if order.Extra != "" {
 								buffer.WriteString(
-									fmt.Sprintf("\t%s - %d(%s)\n",
+									fmt.Sprintf("%d(%s)",
 										order.Number, order.Extra))
 							} else {
 								buffer.WriteString(
-									fmt.Sprintf("\t%s - %d\n", order.Number))
+									fmt.Sprintf("%d", order.Number))
+							}
+							if i != len(orderer.Orders)-1 {
+								buffer.WriteString(", ")
 							}
 						}
+						buffer.WriteByte('\n')
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						strings.TrimSpace(buffer.String()), ev.Channel))
