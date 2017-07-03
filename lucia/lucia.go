@@ -18,6 +18,11 @@ type Order struct {
 	Extra  string
 }
 
+type Orderer struct {
+	ID     string
+	Orders []Order
+}
+
 func getUserById(users []slack.User, id string) *slack.User {
 	for i, o := range users {
 		if o.ID == id {
@@ -27,11 +32,19 @@ func getUserById(users []slack.User, id string) *slack.User {
 	return nil
 }
 
+func getOrdererById(orderers []Orderer, id string) *Orderer {
+	for i, o := range orderers {
+		if o.ID == id {
+			return &orderers[i]
+		}
+	}
+	return nil
+}
+
 func main() {
-	orders := make(map[string]Order)
+	orderers := []Orderer{}
 	var config struct {
-		Key    string `json:"key"`
-		PdfUrl string `json:"pdf_url"`
+		Key string `json:"key"`
 	}
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
@@ -70,7 +83,7 @@ Loop:
 			case *slack.ConnectedEvent:
 				reCommand = regexp.MustCompile(
 					fmt.Sprintf(
-						"^<@%s(?:|[^>]+)?>\\s*(show|order|cancel|list|clear|card)?\\s*(\\d+)?\\s*(.*)$",
+						"^<@%s(?:|[^>]+)?>\\s*(order|list|remove|clear|listall|clearall)?\\s*(\\d+)?\\s*(.*)$",
 						rtm.GetInfo().User.ID))
 			case *slack.MessageEvent:
 				m := reCommand.FindStringSubmatch(ev.Text)
@@ -94,29 +107,90 @@ Loop:
 						Number: num,
 						Extra:  m[3],
 					}
-					orders[ev.User] = order
+					orderer := getOrdererById(orderers, ev.User)
+					if orderer == nil {
+						orderers = append(orderers, Orderer{
+							ID:     ev.User,
+							Orders: []Order{order},
+						})
+					} else {
+						orderer.Orders = append(orderer.Orders, order)
+					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						fmt.Sprintf("your order(%d %s) has been added",
 							order.Number, order.Extra), ev.Channel))
-				case "cancel":
-					if _, ok := orders[ev.User]; ok {
-						delete(orders, ev.User)
-						rtm.SendMessage(rtm.NewOutgoingMessage(
-							"your order has been canceled", ev.Channel))
-					} else {
-						rtm.SendMessage(rtm.NewOutgoingMessage(
-							"you currently have no order", ev.Channel))
-					}
-				case "show":
-					if order, ok := orders[ev.User]; ok {
-						rtm.SendMessage(rtm.NewOutgoingMessage(
-							fmt.Sprintf("your current order: %d(%s)",
-								order.Number, order.Extra), ev.Channel))
-					} else {
-						rtm.SendMessage(rtm.NewOutgoingMessage(
-							"you currently have no order", ev.Channel))
-					}
 				case "list":
+					orderer := getOrdererById(orderers, ev.User)
+					if orderer == nil || len(orderer.Orders) == 0 {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"you currently have no order", ev.Channel))
+						break
+					}
+					if len(orderer.Orders) == 1 {
+						order := orderer.Orders[0]
+						var msg string
+						if order.Extra != "" {
+							msg = fmt.Sprintf("your order: %d(%s)\n",
+								order.Number, order.Extra)
+						} else {
+							msg = fmt.Sprintf("your order: %d\n",
+								order.Number)
+						}
+						rtm.SendMessage(rtm.NewOutgoingMessage(msg, ev.Channel))
+						break
+					}
+					var buffer bytes.Buffer
+					buffer.WriteString(fmt.Sprintf("your current orders:\n"))
+					for i, order := range orderer.Orders {
+						if order.Extra != "" {
+							buffer.WriteString(
+								fmt.Sprintf("\t%d. %s - %d(%s)\n",
+									i, order.Number, order.Extra))
+						} else {
+							buffer.WriteString(
+								fmt.Sprintf("\t%d. %s - %d\n", i, order.Number))
+						}
+					}
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						buffer.String(), ev.Channel))
+				case "remove":
+					if m[2] == "" {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"syntax: remove number", ev.Channel))
+						continue Loop
+					}
+					num, err := strconv.Atoi(m[2])
+					if err != nil {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"only numbers are allowed", ev.Channel))
+						continue Loop
+					}
+					orderer := getOrdererById(orderers, ev.User)
+					if orderer == nil || len(orderer.Orders) == 0 {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"you have no order", ev.Channel))
+						break
+					}
+					if num >= len(orderer.Orders) {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"order does not exist", ev.Channel))
+						break
+					}
+					orderer.Orders = append(orderer.Orders[:num],
+						orderer.Orders[num+1:]...)
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						"order was removed", ev.Channel))
+				case "clear":
+					orderer := getOrdererById(orderers, ev.User)
+					if orderer == nil {
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"you have no order", ev.Channel))
+					} else {
+						orderer.Orders = orderer.Orders[:0]
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"orders cleared", ev.Channel))
+					}
+				case "listall":
 					users, err := rtm.GetUsers()
 					if err != nil {
 						log.Println("ERROR:", "couldn't get users")
@@ -125,36 +199,46 @@ Loop:
 						continue Loop
 					}
 					var buffer bytes.Buffer
-					buffer.WriteString(strconv.Itoa(len(orders)))
-					if len(orders) == 1 {
-						buffer.WriteString(" order was made:\n\n")
-					} else {
-						buffer.WriteString(" orders were made:\n\n")
-					}
-					for userid, order := range orders {
-						user := getUserById(users, userid)
+					buffer.WriteString(fmt.Sprintf("current orders:\n"))
+					for _, orderer := range orderers {
+						user := getUserById(users, orderer.ID)
 						if user == nil {
 							continue
 						}
-						if order.Extra != "" {
-							buffer.WriteString(
-								fmt.Sprintf("%s - %d(%s)\n",
-									user.Name, order.Number, order.Extra))
-						} else {
-							buffer.WriteString(
-								fmt.Sprintf("%s - %d\n", user.Name, order.Number))
+						if len(orderer.Orders) == 1 {
+							order := orderer.Orders[0]
+							if order.Extra != "" {
+								buffer.WriteString(
+									fmt.Sprintf("%s: %s - %d(%s)\n",
+										user.Name, order.Number, order.Extra))
+							} else {
+								buffer.WriteString(
+									fmt.Sprintf("%s: %s - %d\n",
+										user.Name, order.Number))
+							}
+							continue
+						}
+						buffer.WriteString(fmt.Sprintf("%s:\n", user.Name))
+						for _, order := range orderer.Orders {
+							if order.Extra != "" {
+								buffer.WriteString(
+									fmt.Sprintf("\t%s - %d(%s)\n",
+										order.Number, order.Extra))
+							} else {
+								buffer.WriteString(
+									fmt.Sprintf("\t%s - %d\n", order.Number))
+							}
 						}
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						strings.TrimSpace(buffer.String()), ev.Channel))
-				case "clear":
-					orders = make(map[string]Order)
-					rtm.SendMessage(rtm.NewOutgoingMessage("list cleared", ev.Channel))
-				case "card":
-					rtm.SendMessage(rtm.NewOutgoingMessage(config.PdfUrl, ev.Channel))
+				case "clearall":
+					orderers = orderers[:0]
+					rtm.SendMessage(rtm.NewOutgoingMessage("orderers cleared",
+						ev.Channel))
 				default:
 					rtm.SendMessage(rtm.NewOutgoingMessage(
-						"*commands:* order number (extrawish), cancel, list, clear, card",
+						"*commands:* order, list, remove, clear",
 						ev.Channel))
 				}
 			case *slack.PresenceChangeEvent:
