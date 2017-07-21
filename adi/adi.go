@@ -477,6 +477,9 @@ Loop:
 						rtm.GetInfo().User.ID))
 				}
 			case *slack.MessageEvent:
+				if ev.User == bot.ID {
+					continue Loop
+				}
 				{
 					m := reToMe.FindStringSubmatch(ev.Text)
 					if m == nil {

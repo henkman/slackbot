@@ -88,6 +88,7 @@ func main() {
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 	var reAtme *regexp.Regexp
+	var myid string
 	mr := rand.New(rand.NewSource(time.Now().Unix()))
 Loop:
 	for {
@@ -96,7 +97,7 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
-				myid := rtm.GetInfo().User.ID
+				myid = rtm.GetInfo().User.ID
 				reAtme = regexp.MustCompile(
 					fmt.Sprintf("<@%s(?:\\|[^>]+)?>", myid))
 				var buf bytes.Buffer
@@ -172,6 +173,9 @@ Loop:
 				}
 				log.Println("init done")
 			case *slack.MessageEvent:
+				if ev.User == myid {
+					continue Loop
+				}
 				if strings.HasPrefix(ev.Text, "!") ||
 					strings.Contains(ev.Text, "<!") ||
 					strings.Contains(ev.Text, "<#") ||
