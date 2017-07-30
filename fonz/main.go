@@ -40,9 +40,10 @@ func WordJoin(words []string) string {
 
 func main() {
 	var config struct {
-		Key      string `json:"key"`
-		MinWords int    `json:"minwords"`
-		MaxWords int    `json:"maxwords"`
+		Key       string `json:"key"`
+		DeleteKey string `json:"deletekey"`
+		MinWords  int    `json:"minwords"`
+		MaxWords  int    `json:"maxwords"`
 	}
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
@@ -85,6 +86,8 @@ func main() {
 	}
 	api := slack.New(config.Key)
 	api.SetDebug(false)
+	deleteapi := slack.New(config.DeleteKey)
+	deleteapi.SetDebug(false)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 	var reAtme *regexp.Regexp
@@ -187,6 +190,7 @@ Loop:
 						int32(config.MinWords)
 					text := WordJoin(tg.Generate(uint(x)))
 					rtm.SendMessage(rtm.NewOutgoingMessage(text, ev.Channel))
+					deleteapi.DeleteMessage(ev.Channel, ev.Timestamp)
 					continue Loop
 				} else if !strings.Contains(ev.Text, "<@") {
 					tg.Feed(bytes.NewBufferString(strings.ToLower(ev.Text)))
