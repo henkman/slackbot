@@ -22,32 +22,32 @@ var (
 
 func init() {
 
-	adi.RegisterFunc("web",
+	adi.RegisterFunc("gl",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleSearch(m.Text, true)
 		})
 
-	adi.RegisterFunc("nsfwweb",
+	adi.RegisterFunc("glnsfw",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleSearch(m.Text, false)
 		})
 
-	adi.RegisterFunc("img",
+	adi.RegisterFunc("glimg",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleImage(m.Text, true, google.ImageType_Any)
 		})
 
-	adi.RegisterFunc("nsfwimg",
+	adi.RegisterFunc("glimgnsfw",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleImage(m.Text, false, google.ImageType_Any)
 		})
 
-	adi.RegisterFunc("gif",
+	adi.RegisterFunc("glgif",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleImage(m.Text, true, google.ImageType_Animated)
 		})
 
-	adi.RegisterFunc("nsfwgif",
+	adi.RegisterFunc("glgifnsfw",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return googleImage(m.Text, false, google.ImageType_Animated)
 		})

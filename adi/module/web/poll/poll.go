@@ -14,12 +14,12 @@ import (
 
 func init() {
 
-	adi.RegisterFunc("mpoll",
+	adi.RegisterFunc("pollmul",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return poll(m.Text, true)
 		})
 
-	adi.RegisterFunc("spoll",
+	adi.RegisterFunc("poll",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			return poll(m.Text, false)
 		})

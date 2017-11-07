@@ -15,19 +15,7 @@ var (
 
 func init() {
 
-	adi.RegisterFunc("bikpin",
-		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			const N = 400
-			return duckduckgoImage("bikini+pineapple", true, uint(adi.RandUint32(N)))
-		})
-
-	adi.RegisterFunc("squirl",
-		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			const N = 1000
-			return duckduckgoImage("squirrel+images", true, uint(adi.RandUint32(N)))
-		})
-
-	adi.RegisterFunc("rndimg",
+	adi.RegisterFunc("ddgimg",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			const N = 1000
 			if m.Text == "" {
@@ -36,10 +24,50 @@ func init() {
 						"gets random image from first %d search results", N),
 				}
 			}
-			return duckduckgoImage(m.Text, true, uint(adi.RandUint32(N)))
+			return duckduckgoImage(m.Text, true,
+				duckduckgo.ImageType_Any, uint(adi.RandUint32(N)))
 		})
 
-	adi.RegisterFunc("vid",
+	adi.RegisterFunc("ddgimgnsfw",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			const N = 1000
+			if m.Text == "" {
+				return adi.Response{
+					Text: fmt.Sprintf(
+						"gets random image from first %d search results", N),
+				}
+			}
+			return duckduckgoImage(m.Text, false,
+				duckduckgo.ImageType_Any, uint(adi.RandUint32(N)))
+		})
+
+	adi.RegisterFunc("ddggif",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			const N = 1000
+			if m.Text == "" {
+				return adi.Response{
+					Text: fmt.Sprintf(
+						"gets random image from first %d search results", N),
+				}
+			}
+			return duckduckgoImage(m.Text, true,
+				duckduckgo.ImageType_Animated, uint(adi.RandUint32(N)))
+		})
+
+	adi.RegisterFunc("ddggifnsfw",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			const N = 1000
+			if m.Text == "" {
+				return adi.Response{
+					Text: fmt.Sprintf(
+						"gets random image from first %d search results", N),
+				}
+			}
+			return duckduckgoImage(m.Text, false,
+				duckduckgo.ImageType_Animated, uint(adi.RandUint32(N)))
+		})
+
+	adi.RegisterFunc("ddgvid",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			if m.Text == "" {
 				return adi.Response{
@@ -75,7 +103,8 @@ func init() {
 		})
 }
 
-func duckduckgoImage(query string, safe bool, offset uint) adi.Response {
+func duckduckgoImage(query string, safe bool,
+	typ duckduckgo.ImageType, offset uint) adi.Response {
 	if !sess.IsInitialized() {
 		if err := sess.Init(); err != nil {
 			log.Println("ERROR:", err)
@@ -84,7 +113,7 @@ func duckduckgoImage(query string, safe bool, offset uint) adi.Response {
 			}
 		}
 	}
-	images, err := sess.Images(query, safe, offset)
+	images, err := sess.Images(query, safe, typ, offset)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return adi.Response{
