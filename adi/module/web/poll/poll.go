@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
+	"time"
 
 	"github.com/henkman/slackbot/adi"
 	"github.com/nlopes/slack"
@@ -57,8 +57,9 @@ Example: poll animal?, dog, cat, hamster
 			Text: "internal error",
 		}
 	}
-	r, err := http.Post("https://www.strawpoll.me/api/v2/polls",
-		"application/json", bytes.NewBuffer(data))
+	res, err := adi.HttpPostWithTimeout(
+		"https://www.strawpoll.me/api/v2/polls",
+		"application/json", bytes.NewBuffer(data), time.Second*10)
 	if err != nil {
 		log.Println("ERROR:", err)
 		return adi.Response{
@@ -68,14 +69,14 @@ Example: poll animal?, dog, cat, hamster
 	var pres struct {
 		ID uint64 `json:"id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&pres); err != nil {
-		r.Body.Close()
+	if err := json.NewDecoder(res.Body).Decode(&pres); err != nil {
+		res.Body.Close()
 		log.Println("ERROR:", err)
 		return adi.Response{
 			Text: "internal error",
 		}
 	}
-	r.Body.Close()
+	res.Body.Close()
 	p := fmt.Sprintf("http://www.strawpoll.me/%d", pres.ID)
 	log.Println("new poll:", p)
 	return adi.Response{

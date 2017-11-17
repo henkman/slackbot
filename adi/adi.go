@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"math/big"
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -374,6 +376,20 @@ func UrlUnFurl(furl string) string {
 
 func RegisterFunc(name string, f CommandFunc) {
 	commandFuncs[name] = f
+}
+
+func HttpGetWithTimeout(url string, timeout time.Duration) (*http.Response, error) {
+	cli := http.Client{
+		Timeout: timeout,
+	}
+	return cli.Get(url)
+}
+
+func HttpPostWithTimeout(url string, contentType string, body io.Reader, timeout time.Duration) (*http.Response, error) {
+	cli := http.Client{
+		Timeout: timeout,
+	}
+	return cli.Post(url, contentType, body)
 }
 
 func Run() {

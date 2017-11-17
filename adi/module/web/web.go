@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/henkman/slackbot/adi"
@@ -26,9 +27,10 @@ func init() {
 				}
 			}
 			q = strings.ToLower(q)
-			r, err := http.Get(fmt.Sprintf(
+			res, err := adi.HttpGetWithTimeout(fmt.Sprintf(
 				"https://www.openthesaurus.de/synonyme/search?q=%s&format=application/json",
-				url.QueryEscape(q)))
+				url.QueryEscape(q)),
+				time.Second*10)
 			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
@@ -42,12 +44,14 @@ func init() {
 					} `json:"terms"`
 				} `json:"synsets"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&synsets); err != nil {
+			if err := json.NewDecoder(res.Body).Decode(&synsets); err != nil {
+				res.Body.Close()
 				log.Println("ERROR:", err)
 				return adi.Response{
 					Text: "internal error",
 				}
 			}
+			res.Body.Close()
 			syns := make([]string, 0, 10)
 			for _, ss := range synsets.Synsets {
 				for _, t := range ss.Terms {
@@ -72,12 +76,14 @@ func init() {
 
 	adi.RegisterFunc("song",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			var r *http.Response
+			var res *http.Response
 			{
 				var err error
-				r, err = http.Get(fmt.Sprintf(
-					"https://api.dubtrack.fm/room/%s",
-					adi.DubtrackRoom))
+				res, err = adi.HttpGetWithTimeout(
+					fmt.Sprintf(
+						"https://api.dubtrack.fm/room/%s",
+						adi.DubtrackRoom),
+					time.Second*10)
 				if err != nil {
 					log.Println("ERROR:", err)
 					return adi.Response{
@@ -93,14 +99,14 @@ func init() {
 					} `json:"currentSong"`
 				} `json:"data"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&room); err != nil {
-				r.Body.Close()
+			if err := json.NewDecoder(res.Body).Decode(&room); err != nil {
+				res.Body.Close()
 				log.Println("ERROR:", err)
 				return adi.Response{
 					Text: "internal error",
 				}
 			}
-			r.Body.Close()
+			res.Body.Close()
 			var t string
 			d := room.Data
 			if d.CurrentSong == nil {
@@ -119,7 +125,16 @@ func init() {
 
 	adi.RegisterFunc("fact",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			doc, err := goquery.NewDocument("http://randomfunfacts.com/")
+			res, err := adi.HttpGetWithTimeout(
+				"http://www.veryfunnycartoons.com/",
+				time.Second*10)
+			if err != nil {
+				log.Println("ERROR:", err)
+				return adi.Response{
+					Text: "internal error",
+				}
+			}
+			doc, err := goquery.NewDocumentFromResponse(res)
 			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
@@ -135,7 +150,16 @@ func init() {
 
 	adi.RegisterFunc("toon",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			doc, err := goquery.NewDocument("http://www.veryfunnycartoons.com/")
+			res, err := adi.HttpGetWithTimeout(
+				"http://www.veryfunnycartoons.com/",
+				time.Second*10)
+			if err != nil {
+				log.Println("ERROR:", err)
+				return adi.Response{
+					Text: "internal error",
+				}
+			}
+			doc, err := goquery.NewDocumentFromResponse(res)
 			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
@@ -158,7 +182,15 @@ func init() {
 
 	adi.RegisterFunc("insult",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
-			doc, err := goquery.NewDocument("http://www.randominsults.net/")
+			res, err := adi.HttpGetWithTimeout("http://www.randominsults.net/",
+				time.Second*10)
+			if err != nil {
+				log.Println("ERROR:", err)
+				return adi.Response{
+					Text: "internal error",
+				}
+			}
+			doc, err := goquery.NewDocumentFromResponse(res)
 			if err != nil {
 				log.Println("ERROR:", err)
 				return adi.Response{
