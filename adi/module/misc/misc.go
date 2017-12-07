@@ -234,7 +234,60 @@ func init() {
 				}
 			}
 			return adi.Response{
-				Text:   m.Text,
+				Text:   adi.UrlUnFurl(m.Text),
+				Charge: true,
+			}
+		})
+
+	adi.RegisterFunc("sayin",
+		func(m adi.Message, rtm *slack.RTM) adi.Response {
+			if m.Text == "" {
+				return adi.Response{
+					Text: "says something in a channel",
+				}
+			}
+			s := strings.Index(m.Text, " ")
+			if s == -1 {
+				return adi.Response{
+					Text: "syntax: sayin channel something",
+				}
+			}
+			l := m.Text[:s]
+			t := adi.UrlUnFurl(m.Text[s:])
+			if ch := adi.GetChannelByName(rtm, l); ch != nil {
+				rtm.SendMessage(rtm.NewOutgoingMessage(
+					t, ch.ID))
+				return adi.Response{
+					Text:   "",
+					Charge: true,
+				}
+			}
+			if ch := adi.GetGroupByName(rtm, l); ch != nil {
+				rtm.SendMessage(rtm.NewOutgoingMessage(
+					t, ch.ID))
+				return adi.Response{
+					Text:   "",
+					Charge: true,
+				}
+			}
+			u := adi.GetUserByName(rtm, l)
+			if u == nil {
+				return adi.Response{
+					Text:   "did not find channel or user",
+					Charge: false,
+				}
+			}
+			imcs := adi.GetIMChannels(rtm, []string{u.ID})
+			if imcs == nil && len(imcs) > 0 {
+				return adi.Response{
+					Text:   "did not find channel or user",
+					Charge: false,
+				}
+			}
+			rtm.SendMessage(rtm.NewOutgoingMessage(
+				t, imcs[0].ID))
+			return adi.Response{
+				Text:   "",
 				Charge: true,
 			}
 		})

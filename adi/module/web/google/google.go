@@ -62,7 +62,6 @@ func init() {
 				"pt", "ro", "ru", "sk", "sl", "sq", "sr", "sv", "sw", "th",
 				"tl", "tr", "uk", "ur", "vi", "yi",
 			}
-
 			help := "translates text. available languages:\n" +
 				strings.Join(languages, ", ")
 			if m.Text == "" {
@@ -120,6 +119,7 @@ func googleSearch(text string, safe bool) adi.Response {
 			}
 		}
 	}
+	text = adi.UrlUnFurl(text)
 	results, err := gSess.Search(TLD, text, "en", safe, 0, 5)
 	if err != nil {
 		log.Println("ERROR:", err.Error())
@@ -156,6 +156,7 @@ func googleImage(text string, safe bool, typ google.ImageType) adi.Response {
 			}
 		}
 	}
+	text = adi.UrlUnFurl(text)
 	images, err := gSess.Images(TLD, text, "de", safe, typ, 0, 50)
 	if err != nil {
 		log.Println("ERROR:", err)

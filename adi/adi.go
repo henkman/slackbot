@@ -154,20 +154,6 @@ func MulOverflows(a, b uint64) bool {
 	return c/b != a
 }
 
-func getGeneralChat(rtm *slack.RTM) *slack.Channel {
-	cs, err := rtm.GetChannels(true)
-	if err != nil {
-		log.Fatal("ERROR:", err)
-		return nil
-	}
-	for _, c := range cs {
-		if c.IsGeneral {
-			return &c
-		}
-	}
-	return nil
-}
-
 func GetUserByName(rtm *slack.RTM, name string) *slack.User {
 	us, err := rtm.GetUsers()
 	if err != nil {
@@ -198,6 +184,20 @@ func GetAccountByName(rtm *slack.RTM, name string) Account {
 
 func GetChannelByName(rtm *slack.RTM, name string) *slack.Channel {
 	cs, err := rtm.GetChannels(true)
+	if err != nil {
+		log.Println("ERROR:", err.Error())
+		return nil
+	}
+	for i, c := range cs {
+		if c.Name == name {
+			return &cs[i]
+		}
+	}
+	return nil
+}
+
+func GetGroupByName(rtm *slack.RTM, name string) *slack.Group {
+	cs, err := rtm.GetGroups(true)
 	if err != nil {
 		log.Println("ERROR:", err.Error())
 		return nil
@@ -270,6 +270,25 @@ func Uniq(data sort.Interface) (size int) {
 	return p + 1
 }
 
+func GetIMChannels(rtm *slack.RTM, pids []string) []slack.IM {
+	imcs, err := rtm.GetIMChannels()
+	if err != nil {
+		log.Println("ERROR:", err)
+		return nil
+	}
+	wanted := make([]slack.IM, 0, len(pids))
+loop:
+	for _, imc := range imcs {
+		for _, pid := range pids {
+			if imc.User == pid {
+				wanted = append(wanted, imc)
+				continue loop
+			}
+		}
+	}
+	return wanted
+}
+
 func drawLottery(rtm *slack.RTM) {
 	lot := &GlobalBank.Lottery
 	nextDraw := lot.LastDraw.Add(GlobalBank.Lottery.DrawEvery).UTC()
@@ -319,9 +338,15 @@ func drawLottery(rtm *slack.RTM) {
 			lot.Pot,
 		)
 		log.Println(m)
-		cg := getGeneralChat(rtm)
-		if cg != nil {
-			rtm.SendMessage(rtm.NewOutgoingMessage(m, cg.ID))
+		pids := make([]string, 0, len(participants))
+		for _, p := range participants {
+			pids = append(pids, p.ID)
+		}
+		imcs := GetIMChannels(rtm, pids)
+		if imcs != nil {
+			for _, imc := range imcs {
+				rtm.SendMessage(rtm.NewOutgoingMessage(m, imc.ID))
+			}
 		}
 		dst.Add(lot.Pot)
 		lot.Pot = 0

@@ -82,6 +82,7 @@ func init() {
 					}
 				}
 			}
+			m.Text = adi.UrlUnFurl(m.Text)
 			vids, err := sess.Videos(m.Text, 0)
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -113,6 +114,7 @@ func duckduckgoImage(query string, safe bool,
 			}
 		}
 	}
+	query = adi.UrlUnFurl(query)
 	images, err := sess.Images(query, safe, typ, offset)
 	if err != nil {
 		log.Println("ERROR:", err)
