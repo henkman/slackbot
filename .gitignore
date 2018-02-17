@@ -3,6 +3,9 @@
 *.a
 *.so
 
+#test files
+test_*.go
+
 # Folders
 _obj
 _test

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -237,6 +238,40 @@ Loop:
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						strings.TrimSpace(buffer.String()), ev.Channel))
+				case "grouporders":
+					users, err := rtm.GetUsers()
+					if err != nil {
+						log.Println("ERROR:", "couldn't get users")
+						rtm.SendMessage(rtm.NewOutgoingMessage(
+							"internal error", ev.Channel))
+						continue Loop
+					}
+
+					for _, orderer := range orderers {
+						user := getUserById(users, orderer.ID)
+						if user == nil || len(orderer.Orders) == 0 {
+							continue
+						}
+
+						groupedOrders := make(map[int]int)
+						for _, order := range orderer.Orders {
+							groupedOrders[order.Number] = groupedOrders[order.Number] + 1
+						}
+
+						var numbers []int
+						for number := range groupedOrders {
+							numbers = append(numbers, number)
+						}
+						sort.Ints(numbers)
+
+						var buffer bytes.Buffer
+						buffer.WriteString("current orders:\n")
+						for _, number := range numbers {
+							buffer.WriteString(
+								fmt.Sprintf("%dx %d", groupedOrders[number], number))
+							buffer.WriteByte('\n')
+						}
+					}
 				case "clearall":
 					orderers = orderers[:0]
 					rtm.SendMessage(rtm.NewOutgoingMessage("orderers cleared",
