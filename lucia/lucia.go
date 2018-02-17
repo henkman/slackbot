@@ -84,7 +84,7 @@ Loop:
 			case *slack.ConnectedEvent:
 				reCommand = regexp.MustCompile(
 					fmt.Sprintf(
-						"^<@%s(?:|[^>]+)?>\\s*(listall|clearall|order|list|remove|clear)?\\s*(\\d+)?\\s*(.*)$",
+						`^<@%s(?:|[^>]+)?>\s*(listall|clearall|summary|order|list|remove|clear)?\s*(\d+)?\s*(.*)$`,
 						rtm.GetInfo().User.ID))
 			case *slack.MessageEvent:
 				m := reCommand.FindStringSubmatch(ev.Text)
@@ -238,7 +238,7 @@ Loop:
 					}
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						strings.TrimSpace(buffer.String()), ev.Channel))
-				case "grouporders":
+				case "summary":
 					users, err := rtm.GetUsers()
 					if err != nil {
 						log.Println("ERROR:", "couldn't get users")
@@ -247,6 +247,8 @@ Loop:
 						continue Loop
 					}
 
+					var buffer bytes.Buffer
+					buffer.WriteString("current orders:\n")
 					for _, orderer := range orderers {
 						user := getUserById(users, orderer.ID)
 						if user == nil || len(orderer.Orders) == 0 {
@@ -264,14 +266,14 @@ Loop:
 						}
 						sort.Ints(numbers)
 
-						var buffer bytes.Buffer
-						buffer.WriteString("current orders:\n")
 						for _, number := range numbers {
 							buffer.WriteString(
 								fmt.Sprintf("%dx %d", groupedOrders[number], number))
 							buffer.WriteByte('\n')
 						}
 					}
+					rtm.SendMessage(rtm.NewOutgoingMessage(
+						strings.TrimSpace(buffer.String()), ev.Channel))
 				case "clearall":
 					orderers = orderers[:0]
 					rtm.SendMessage(rtm.NewOutgoingMessage("orderers cleared",
