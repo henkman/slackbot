@@ -1,7 +1,6 @@
 package points
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"math"
@@ -33,11 +32,11 @@ func init() {
 					Text: "internal error",
 				}
 			}
-			s := bytes.NewBufferString("")
+			var s strings.Builder
 			for i, o := range us {
 				for _, su := range sus {
 					if su.ID == o.ID {
-						fmt.Fprintf(s, "%d. %s@%d\n",
+						fmt.Fprintf(&s, "%d. %s@%d\n",
 							i+1, su.Name, o.Points)
 						break
 					}

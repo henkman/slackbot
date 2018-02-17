@@ -1,7 +1,6 @@
 package google
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net/url"
@@ -132,9 +131,9 @@ func googleSearch(text string, safe bool) adi.Response {
 			Text: "nothing found",
 		}
 	}
-	buf := bytes.NewBufferString("")
+	var buf strings.Builder
 	for _, res := range results {
-		fmt.Fprintf(buf, "%s %s\n", res.URL, res.Content)
+		fmt.Fprintf(&buf, "%s %s\n", res.URL, res.Content)
 	}
 	return adi.Response{
 		Text:   buf.String(),

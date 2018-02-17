@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -140,7 +139,7 @@ Loop:
 						rtm.SendMessage(rtm.NewOutgoingMessage(msg, ev.Channel))
 						break
 					}
-					var buffer bytes.Buffer
+					var buffer strings.Builder
 					buffer.WriteString(fmt.Sprintf("your current orders:\n"))
 					for i, order := range orderer.Orders {
 						if order.Extra != "" {
@@ -200,7 +199,7 @@ Loop:
 							"internal error", ev.Channel))
 						continue Loop
 					}
-					var buffer bytes.Buffer
+					var buffer strings.Builder
 					buffer.WriteString("current orders:\n")
 					for _, orderer := range orderers {
 						user := getUserById(users, orderer.ID)
@@ -247,7 +246,7 @@ Loop:
 						continue Loop
 					}
 
-					var buffer bytes.Buffer
+					var buffer strings.Builder
 					buffer.WriteString("current orders:\n")
 					for _, orderer := range orderers {
 						user := getUserById(users, orderer.ID)
