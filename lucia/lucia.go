@@ -18,6 +18,11 @@ type Order struct {
 	Extra  string
 }
 
+type GroupedOrder struct {
+	Count int
+	Extra string
+}
+
 type Orderer struct {
 	ID     string
 	Orders []Order
@@ -248,29 +253,48 @@ Loop:
 
 					var buffer strings.Builder
 					buffer.WriteString("current orders:\n")
+					groupedOrders := make(map[int]GroupedOrder)
+
 					for _, orderer := range orderers {
 						user := getUserById(users, orderer.ID)
 						if user == nil || len(orderer.Orders) == 0 {
 							continue
 						}
 
-						groupedOrders := make(map[int]int)
 						for _, order := range orderer.Orders {
-							groupedOrders[order.Number] = groupedOrders[order.Number] + 1
-						}
-
-						var numbers []int
-						for number := range groupedOrders {
-							numbers = append(numbers, number)
-						}
-						sort.Ints(numbers)
-
-						for _, number := range numbers {
-							buffer.WriteString(
-								fmt.Sprintf("%dx %d", groupedOrders[number], number))
-							buffer.WriteByte('\n')
+							groupedOrder := groupedOrders[order.Number]
+							groupedOrder.Count++
+							if order.Extra != "" {
+								if groupedOrder.Extra != "" {
+									groupedOrder.Extra += " | " + order.Extra
+								} else {
+									groupedOrder.Extra = order.Extra
+								}
+							}
+							groupedOrders[order.Number] = groupedOrder
 						}
 					}
+
+					var numbers []int
+					for number := range groupedOrders {
+						numbers = append(numbers, number)
+					}
+					sort.Ints(numbers)
+
+					for _, number := range numbers {
+						groupedOrder := groupedOrders[number]
+						if groupedOrder.Extra != "" {
+							buffer.WriteString(
+								fmt.Sprintf("%dx %d (%s)",
+									groupedOrder.Count, number, groupedOrder.Extra))
+						} else {
+							buffer.WriteString(
+								fmt.Sprintf("%dx %d",
+									groupedOrder.Count, number))
+						}
+						buffer.WriteByte('\n')
+					}
+
 					rtm.SendMessage(rtm.NewOutgoingMessage(
 						strings.TrimSpace(buffer.String()), ev.Channel))
 				case "clearall":
