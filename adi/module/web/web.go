@@ -126,7 +126,7 @@ func init() {
 	adi.RegisterFunc("fact",
 		func(m adi.Message, rtm *slack.RTM) adi.Response {
 			res, err := adi.HttpGetWithTimeout(
-				"http://www.veryfunnycartoons.com/",
+				"http://randomfunfacts.com/",
 				time.Second*10)
 			if err != nil {
 				log.Println("ERROR:", err)
