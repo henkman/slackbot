@@ -499,7 +499,7 @@ func Run() {
 	api.SetDebug(false)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
-	var bot slack.User
+	var bot *slack.User
 Loop:
 	for {
 		select {
@@ -507,8 +507,11 @@ Loop:
 			switch ev := msg.Data.(type) {
 			case *slack.HelloEvent:
 			case *slack.ConnectedEvent:
-				info := rtm.GetInfo()
-				bot = *ev.Info.GetUserByID(info.User.ID)
+				u, err := rtm.GetUserInfo(ev.Info.User.ID)
+				if err != nil {
+					log.Fatal(err)
+				}
+				bot = u
 				if shortCommands {
 					reToMe = regexp.MustCompile(fmt.Sprintf("^(?:<@%s>\\s*|%s)",
 						rtm.GetInfo().User.ID,
