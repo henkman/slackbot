@@ -119,7 +119,11 @@ Loop:
 						tg.Feed(&buf)
 					}
 				}
-				for _, ch := range rtm.GetInfo().Channels {
+				channels, err := rtm.GetChannels(true)
+				if err != nil {
+					log.Fatal(err)
+				}
+				for _, ch := range channels {
 					if !ch.IsMember {
 						continue
 					}
@@ -143,7 +147,11 @@ Loop:
 						l = h.Messages[len(h.Messages)-1].Timestamp
 					}
 				}
-				for _, ch := range rtm.GetInfo().Groups {
+				groups, err := rtm.GetGroups(true)
+				if err != nil {
+					log.Fatal(err)
+				}
+				for _, ch := range groups {
 					member := false
 					for _, m := range ch.Members {
 						if m == myid {
