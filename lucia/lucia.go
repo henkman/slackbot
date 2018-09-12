@@ -49,7 +49,8 @@ func getOrdererById(orderers []Orderer, id string) *Orderer {
 func main() {
 	orderers := []Orderer{}
 	var config struct {
-		Key string `json:"key"`
+		Debug bool   `json:"debug"`
+		Key   string `json:"key"`
 	}
 	{
 		fd, err := os.OpenFile("./config.json", os.O_RDONLY, 0600)
@@ -76,7 +77,7 @@ func main() {
 	}()
 	var reCommand *regexp.Regexp
 	api := slack.New(config.Key)
-	api.SetDebug(false)
+	api.SetDebug(config.Debug)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 Loop:

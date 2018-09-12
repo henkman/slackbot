@@ -428,12 +428,14 @@ func Run() {
 		log.SetOutput(f)
 	}
 	var (
+		debug            bool
 		key              string
 		shortCommands    bool
 		shortCommandSign string
 	)
 	{
 		var config struct {
+			Debug     bool   `json:"debug"`
 			Key              string `json:"key"`
 			ShortCommands    bool   `json:"short_commands"`
 			ShortCommandSign string `json:"short_command_sign"`
@@ -449,6 +451,7 @@ func Run() {
 			log.Panicln(err)
 		}
 		fd.Close()
+		debug = config.Debug
 		key = config.Key
 		shortCommands = config.ShortCommands
 		shortCommandSign = config.ShortCommandSign
@@ -494,12 +497,12 @@ func Run() {
 				strings.Join(commandStrings, "|")))
 	}
 	var reToMe *regexp.Regexp
+	var bot *slack.User
 	tick := time.NewTicker(time.Minute)
 	api := slack.New(key)
-	api.SetDebug(false)
+	api.SetDebug(debug)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
-	var bot *slack.User
 Loop:
 	for {
 		select {

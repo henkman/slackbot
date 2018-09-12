@@ -40,6 +40,7 @@ func WordJoin(words []string) string {
 
 func main() {
 	var config struct {
+		Debug     bool   `json:"debug"`
 		Key       string `json:"key"`
 		DeleteKey string `json:"deletekey"`
 		MinWords  int    `json:"minwords"`
@@ -84,15 +85,15 @@ func main() {
 		}
 		fd.Close()
 	}
-	api := slack.New(config.Key)
-	api.SetDebug(false)
-	deleteapi := slack.New(config.DeleteKey)
-	deleteapi.SetDebug(false)
-	rtm := api.NewRTM()
-	go rtm.ManageConnection()
 	var reAtme *regexp.Regexp
 	var myid string
 	mr := rand.New(rand.NewSource(time.Now().Unix()))
+	deleteapi := slack.New(config.DeleteKey)
+	deleteapi.SetDebug(false)
+	api := slack.New(config.Key)
+	api.SetDebug(config.Debug)
+	rtm := api.NewRTM()
+	go rtm.ManageConnection()
 Loop:
 	for {
 		select {
