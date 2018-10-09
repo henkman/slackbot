@@ -435,7 +435,7 @@ func Run() {
 	)
 	{
 		var config struct {
-			Debug     bool   `json:"debug"`
+			Debug            bool   `json:"debug"`
 			Key              string `json:"key"`
 			ShortCommands    bool   `json:"short_commands"`
 			ShortCommandSign string `json:"short_command_sign"`
@@ -499,8 +499,7 @@ func Run() {
 	var reToMe *regexp.Regexp
 	var bot *slack.User
 	tick := time.NewTicker(time.Minute)
-	api := slack.New(key)
-	api.SetDebug(debug)
+	api := slack.New(key, slack.OptionDebug(debug))
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 Loop:
@@ -577,15 +576,16 @@ Loop:
 					Timestamp: ev.Timestamp,
 				}, rtm)
 				if r.Text != "" {
-					rtm.PostMessage(ev.Channel, r.Text,
-						slack.PostMessageParameters{
+					rtm.PostMessage(ev.Channel,
+						slack.MsgOptionText(r.Text, false),
+						slack.MsgOptionPostMessageParameters(slack.PostMessageParameters{
 							Parse:       "full",
 							UnfurlLinks: r.UnfurlLinks,
 							UnfurlMedia: r.UnfurlLinks,
 							AsUser:      true,
 							Username:    bot.Name,
 							IconURL:     bot.Profile.ImageOriginal,
-						})
+						}))
 				}
 				if cmd.Price > 0 && r.Charge {
 					u.Points.Sub(cmd.Price)

@@ -89,9 +89,7 @@ func main() {
 	var myid string
 	mr := rand.New(rand.NewSource(time.Now().Unix()))
 	deleteapi := slack.New(config.DeleteKey)
-	deleteapi.SetDebug(false)
-	api := slack.New(config.Key)
-	api.SetDebug(config.Debug)
+	api := slack.New(config.Key, slack.OptionDebug(config.Debug))
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 Loop:
